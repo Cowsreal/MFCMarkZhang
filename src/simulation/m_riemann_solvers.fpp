@@ -255,6 +255,86 @@ contains
         end if
     end subroutine s_compute_viscous_source_flux
 
+    !> Subroutine that computes the geometric source terms for the Riemann
+        !! problem in non-Cartesian (Cylindrical or Spherical) coordinates.
+        !! This routine should be called within a GPU kernel on a single 
+        !! cell interface.
+    subroutine s_compute_geometric_source_flux(flux_gsrc, flux_rs, p_Star, &
+                           rho_L, rho_R, vel_L, vel_R, &
+                           xi_M, xi_P, xi_L, xi_R, s_M, s_P, s_S, norm_dir, j, k, l)
+        $:GPU_ROUTINE(function_name='s_compute_geometric_source_flux', &
+            & parallelism='[seq]', cray_inline=True)
+
+        real(wp), dimension(:,:,:,:), intent(inout) :: flux_gsrc
+        real(wp), dimension(:,:,:,:), intent(in)    :: flux_rs
+        real(wp), intent(in) :: rho_L, rho_R
+        real(wp), dimension( num_dims), intent(in) :: vel_L, vel_R
+        real(wp), intent(in) :: s_M, s_P, s_S
+        real(wp), intent(in) :: xi_M, xi_P, xi_L, xi_R
+        real(wp), intent(in) :: p_Star 
+        integer, intent(in) :: norm_dir
+        
+        integer, intent(in) :: j, k, l
+        integer :: i
+
+        ! model_eqn == 3
+        if (norm_dir == 2) then
+            !Substituting the advective flux into the inviscid geometrical source flux
+            $:GPU_LOOP(parallelism='[seq]')
+            do i = 1, E_idx
+                flux_gsrc(j, k, l, i) = flux_rs(j, k, l, i)
+            end do
+            if(model_eqns == 3) then
+                $:GPU_LOOP(parallelism='[seq]')
+                do i = intxb, intxe
+                    flux_gsrc(j, k, l, i) = flux_rs(j, k, l, i)
+                end do
+                ! Recalculating the radial momentum geometric source flux
+                flux_gsrc(j, k, l, momxb - 1 + dir_idx(1)) = flux_gsrc(j, k, l, momxb - 1 + dir_idx(1)) - p_Star
+            elseif (model_eqns == 4 .or. model_eqns == 2 .or. (model_eqns == 2 .and. bubbles_euler)) then
+                flux_gsrc(j, k, l, contxe + dir_idx(1)) = &
+                    xi_M*(rho_L*(vel_L(dir_idx(1))* &
+                                    vel_L(dir_idx(1)) + &
+                                    s_M*(xi_L*(dir_flg(dir_idx(1))*s_S + &
+                                            (1._wp - dir_flg(dir_idx(1)))* &
+                                            vel_L(dir_idx(1))) - vel_L(dir_idx(1))))) &
+                    + xi_P*(rho_R*(vel_R(dir_idx(1))* &
+                                    vel_R(dir_idx(1)) + &
+                                    s_P*(xi_R*(dir_flg(dir_idx(1))*s_S + &
+                                                (1._wp - dir_flg(dir_idx(1)))* &
+                                                vel_R(dir_idx(1))) - vel_R(dir_idx(1)))))
+            end if
+            ! Geometrical source of the void fraction(s) is zero
+            $:GPU_LOOP(parallelism='[seq]')
+            do i = advxb, advxe
+                flux_gsrc(j, k, l, i) = 0._wp
+            end do
+        endif
+        if (norm_dir == 3) then
+            $:GPU_LOOP(parallelism='[seq]')
+            do i = 1, sys_size
+                flux_gsrc(j, k, l, i) = 0._wp
+            end do
+            if (model_eqns == 3) then
+                flux_gsrc(j, k, l, momxb - 1 + dir_idx(1)) = flux_gsrc(j, k, l, momxb - 1 + dir_idx(1)) - p_Star
+            elseif (model_eqns == 4 .or. model_eqns == 2 .or. (model_eqns == 2 .and. bubbles_euler)) then
+                flux_gsrc(j, k, l, momxb + 1) = &
+                    -xi_M*(rho_L*(vel_L(dir_idx(1))* &
+                                    vel_L(dir_idx(1)) + &
+                                    s_M*(xi_L*(dir_flg(dir_idx(1))*s_S + &
+                                                (1._wp - dir_flg(dir_idx(1)))* &
+                                                vel_L(dir_idx(1))) - vel_L(dir_idx(1))))) &
+                    - xi_P*(rho_R*(vel_R(dir_idx(1))* &
+                                    vel_R(dir_idx(1)) + &
+                                    s_P*(xi_R*(dir_flg(dir_idx(1))*s_S + &
+                                                (1._wp - dir_flg(dir_idx(1)))* &
+                                                vel_R(dir_idx(1))) - vel_R(dir_idx(1)))))
+            endif
+            flux_gsrc(j, k, l, momxe) = flux_rs(j, k, l, momxb + 1)
+        endif
+    end subroutine s_compute_geometric_source_flux
+
+
     subroutine s_hll_riemann_solver(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_vf, &
                                     dqL_prim_dy_vf, &
                                     dqL_prim_dz_vf, &
@@ -1850,6 +1930,7 @@ contains
 
     end subroutine s_lf_riemann_solver
 
+
     !> This procedure is the implementation of the Harten, Lax,
         !!      van Leer, and contact (HLLC) approximate Riemann solver,
         !!      see Toro (1999) and Johnsen (2007). The viscous and the
@@ -2363,40 +2444,11 @@ contains
                                 end if
 
                                 ! Geometrical source flux for cylindrical coordinates
-                                #:if (NORM_DIR == 2)
-                                    if (cyl_coord) then
-                                        !Substituting the advective flux into the inviscid geometrical source flux
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, E_idx
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = flux_rs${XYZ}$_vf(j, k, l, i)
-                                        end do
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = intxb, intxe
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = flux_rs${XYZ}$_vf(j, k, l, i)
-                                        end do
-                                        ! Recalculating the radial momentum geometric source flux
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxb - 1 + dir_idx(1)) = &
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, momxb - 1 + dir_idx(1)) - p_Star
-                                        ! Geometrical source of the void fraction(s) is zero
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = advxb, advxe
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = 0._wp
-                                        end do
-                                    end if
-                                #:endif
-                                #:if (NORM_DIR == 3)
-                                    if (grid_geometry == 3) then
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, sys_size
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = 0._wp
-                                        end do
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxb - 1 + dir_idx(1)) = &
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, momxb - 1 + dir_idx(1)) - p_Star
-
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxe) = flux_rs${XYZ}$_vf(j, k, l, momxb + 1)
-                                    end if
-                                #:endif
-
+                                if (cyl_coord) then
+                                    call s_compute_geometric_source_flux(flux_gsrc_rs${XYZ}$_vf, flux_rs${XYZ}$_vf, p_Star, &
+                                        rho_L, rho_R, vel_L, vel_R, &
+                                        xi_M, xi_P, xi_L, xi_R, s_M, s_P, s_S, norm_dir, j, k, l)
+                                end if
                             end do
                         end do
                     end do
@@ -2594,54 +2646,12 @@ contains
                                     end do
                                 end if
 
-                                ! Geometrical source flux for cylindrical coordinates
-
-                                #:if (NORM_DIR == 2)
-                                    if (cyl_coord) then
-                                        ! Substituting the advective flux into the inviscid geometrical source flux
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, E_idx
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = flux_rs${XYZ}$_vf(j, k, l, i)
-                                        end do
-                                        ! Recalculating the radial momentum geometric source flux
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, contxe + dir_idx(1)) = &
-                                            xi_M*(rho_L*(vel_L(dir_idx(1))* &
-                                                         vel_L(dir_idx(1)) + &
-                                                         s_M*(xi_L*(dir_flg(dir_idx(1))*s_S + &
-                                                                    (1._wp - dir_flg(dir_idx(1)))* &
-                                                                    vel_L(dir_idx(1))) - vel_L(dir_idx(1))))) &
-                                            + xi_P*(rho_R*(vel_R(dir_idx(1))* &
-                                                           vel_R(dir_idx(1)) + &
-                                                           s_P*(xi_R*(dir_flg(dir_idx(1))*s_S + &
-                                                                      (1._wp - dir_flg(dir_idx(1)))* &
-                                                                      vel_R(dir_idx(1))) - vel_R(dir_idx(1)))))
-                                        ! Geometrical source of the void fraction(s) is zero
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = advxb, advxe
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = 0._wp
-                                        end do
-                                    end if
-                                #:endif
-                                #:if (NORM_DIR == 3)
-                                    if (grid_geometry == 3) then
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, sys_size
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = 0._wp
-                                        end do
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxb + 1) = &
-                                            -xi_M*(rho_L*(vel_L(dir_idx(1))* &
-                                                          vel_L(dir_idx(1)) + &
-                                                          s_M*(xi_L*(dir_flg(dir_idx(1))*s_S + &
-                                                                     (1._wp - dir_flg(dir_idx(1)))* &
-                                                                     vel_L(dir_idx(1))) - vel_L(dir_idx(1))))) &
-                                            - xi_P*(rho_R*(vel_R(dir_idx(1))* &
-                                                           vel_R(dir_idx(1)) + &
-                                                           s_P*(xi_R*(dir_flg(dir_idx(1))*s_S + &
-                                                                      (1._wp - dir_flg(dir_idx(1)))* &
-                                                                      vel_R(dir_idx(1))) - vel_R(dir_idx(1)))))
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxe) = flux_rs${XYZ}$_vf(j, k, l, momxb + 1)
-                                    end if
-                                #:endif
+                                ! Geometrical source flux for cylindrical coordinate
+                                if (cyl_coord) then
+                                    call s_compute_geometric_source_flux(flux_gsrc_rs${XYZ}$_vf, flux_rs${XYZ}$_vf, p_Star, &
+                                        rho_L, rho_R, vel_L, vel_R, &
+                                        xi_M, xi_P, xi_L, xi_R, s_M, s_P, s_S, norm_dir, j, k, l)
+                                end if
                             end do
                         end do
                     end do
@@ -3028,56 +3038,13 @@ contains
                                         + xi_P*nbub_R &
                                         *(vel_R(dir_idx(1)) + s_P*(xi_R - 1._wp))
                                 end if
+                                ! Geometrical source flux for cylindrical coordinate
 
-                                ! Geometrical source flux for cylindrical coordinates
-                                #:if (NORM_DIR == 2)
-                                    if (cyl_coord) then
-                                        ! Substituting the advective flux into the inviscid geometrical source flux
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, E_idx
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = flux_rs${XYZ}$_vf(j, k, l, i)
-                                        end do
-                                        ! Recalculating the radial momentum geometric source flux
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, contxe + dir_idx(1)) = &
-                                            xi_M*(rho_L*(vel_L(dir_idx(1))* &
-                                                         vel_L(dir_idx(1)) + &
-                                                         s_M*(xi_L*(dir_flg(dir_idx(1))*s_S + &
-                                                                    (1._wp - dir_flg(dir_idx(1)))* &
-                                                                    vel_L(dir_idx(1))) - vel_L(dir_idx(1))))) &
-                                            + xi_P*(rho_R*(vel_R(dir_idx(1))* &
-                                                           vel_R(dir_idx(1)) + &
-                                                           s_P*(xi_R*(dir_flg(dir_idx(1))*s_S + &
-                                                                      (1._wp - dir_flg(dir_idx(1)))* &
-                                                                      vel_R(dir_idx(1))) - vel_R(dir_idx(1)))))
-                                        ! Geometrical source of the void fraction(s) is zero
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = advxb, advxe
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = 0._wp
-                                        end do
-                                    end if
-                                #:endif
-                                #:if (NORM_DIR == 3)
-                                    if (grid_geometry == 3) then
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, sys_size
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = 0._wp
-                                        end do
-
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxb + 1) = &
-                                            -xi_M*(rho_L*(vel_L(dir_idx(1))* &
-                                                          vel_L(dir_idx(1)) + &
-                                                          s_M*(xi_L*(dir_flg(dir_idx(1))*s_S + &
-                                                                     (1._wp - dir_flg(dir_idx(1)))* &
-                                                                     vel_L(dir_idx(1))) - vel_L(dir_idx(1))))) &
-                                            - xi_P*(rho_R*(vel_R(dir_idx(1))* &
-                                                           vel_R(dir_idx(1)) + &
-                                                           s_P*(xi_R*(dir_flg(dir_idx(1))*s_S + &
-                                                                      (1._wp - dir_flg(dir_idx(1)))* &
-                                                                      vel_R(dir_idx(1))) - vel_R(dir_idx(1)))))
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxe) = flux_rs${XYZ}$_vf(j, k, l, momxb + 1)
-
-                                    end if
-                                #:endif
+                                if (cyl_coord) then
+                                call s_compute_geometric_source_flux(flux_gsrc_rs${XYZ}$_vf, flux_rs${XYZ}$_vf, p_Star, &
+                                    rho_L, rho_R, vel_L, vel_R, &
+                                    xi_M, xi_P, xi_L, xi_R, s_M, s_P, s_S, norm_dir, j, k, l)
+                                end if
                             end do
                         end do
                     end do
@@ -3504,57 +3471,12 @@ contains
                                         flux_src_rs${XYZ}$_vf(j, k, l, i) = 0.0_wp
                                     end do
                                 end if
-
                                 ! Geometrical source flux for cylindrical coordinates
-                                #:if (NORM_DIR == 2)
-                                    if (cyl_coord) then
-                                        !Substituting the advective flux into the inviscid geometrical source flux
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, E_idx
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = flux_rs${XYZ}$_vf(j, k, l, i)
-                                        end do
-                                        ! Recalculating the radial momentum geometric source flux
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, contxe + dir_idx(1)) = &
-                                            xi_M*(rho_L*(vel_L(dir_idx(1))* &
-                                                         vel_L(dir_idx(1)) + &
-                                                         s_M*(xi_L*(dir_flg(dir_idx(1))*s_S + &
-                                                                    (1._wp - dir_flg(dir_idx(1)))* &
-                                                                    vel_L(dir_idx(1))) - vel_L(dir_idx(1))))) &
-                                            + xi_P*(rho_R*(vel_R(dir_idx(1))* &
-                                                           vel_R(dir_idx(1)) + &
-                                                           s_P*(xi_R*(dir_flg(dir_idx(1))*s_S + &
-                                                                      (1._wp - dir_flg(dir_idx(1)))* &
-                                                                      vel_R(dir_idx(1))) - vel_R(dir_idx(1)))))
-                                        ! Geometrical source of the void fraction(s) is zero
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = advxb, advxe
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = 0._wp
-                                        end do
-                                    end if
-                                #:endif
-                                #:if (NORM_DIR == 3)
-                                    if (grid_geometry == 3) then
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, sys_size
-                                            flux_gsrc_rs${XYZ}$_vf(j, k, l, i) = 0._wp
-                                        end do
-
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxb + 1) = &
-                                            -xi_M*(rho_L*(vel_L(dir_idx(1))* &
-                                                          vel_L(dir_idx(1)) + &
-                                                          s_M*(xi_L*(dir_flg(dir_idx(1))*s_S + &
-                                                                     (1._wp - dir_flg(dir_idx(1)))* &
-                                                                     vel_L(dir_idx(1))) - vel_L(dir_idx(1))))) &
-                                            - xi_P*(rho_R*(vel_R(dir_idx(1))* &
-                                                           vel_R(dir_idx(1)) + &
-                                                           s_P*(xi_R*(dir_flg(dir_idx(1))*s_S + &
-                                                                      (1._wp - dir_flg(dir_idx(1)))* &
-                                                                      vel_R(dir_idx(1))) - vel_R(dir_idx(1)))))
-                                        flux_gsrc_rs${XYZ}$_vf(j, k, l, momxe) = flux_rs${XYZ}$_vf(j, k, l, momxb + 1)
-
-                                    end if
-                                #:endif
-
+                                if (cyl_coord) then
+                                    call s_compute_geometric_source_flux(flux_gsrc_rs${XYZ}$_vf, flux_rs${XYZ}$_vf, p_Star, &
+                                        rho_L, rho_R, vel_L, vel_R, &
+                                        xi_M, xi_P, xi_L, xi_R, s_M, s_P, s_S, norm_dir, j, k, l)
+                                end if
                             end do
                         end do
                     end do
