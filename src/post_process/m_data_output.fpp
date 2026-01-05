@@ -492,6 +492,12 @@ contains
         character(LEN=len_trim(case_dir) + 3*name_len) :: file_loc
 
         integer :: ierr !< Generic flag used to identify and report database errors
+        character(LEN=len_trim(case_dir) + 3*name_len) :: series_loc
+
+        integer :: funit
+        logical :: fexist
+        logical :: startingStep
+
 
         ! Silo-HDF5 Database Format
 
@@ -505,7 +511,7 @@ contains
             ! Creating formatted database slave file at the above location
             ! and setting up the structure of the file and its header info
             ierr = DBCREATE(trim(file_loc), len_trim(file_loc), &
-                            DB_CLOBBER, DB_LOCAL, 'MFC v3.0', 8, &
+                            DB_CLOBBER, DB_LOCAL, 'MFC v5.1.5', 8, &
                             DB_HDF5, dbfile)
 
             ! Verifying that the creation and setup process of the formatted
@@ -526,7 +532,7 @@ contains
                 file_loc = trim(rootdir)//trim(file_loc)
 
                 ierr = DBCREATE(trim(file_loc), len_trim(file_loc), &
-                                DB_CLOBBER, DB_LOCAL, 'MFC v3.0', 8, &
+                                DB_CLOBBER, DB_LOCAL, 'MFC v5.1.5', 8, &
                                 DB_HDF5, dbroot)
 
                 if (dbroot == -1) then
@@ -535,6 +541,55 @@ contains
                                      'Exiting.')
                 end if
 
+                ! If created successfully, create .series file for opening time series group for Paraview v>=6.0
+                write (file_loc, '(A,A)') trim(rootdir)//'/collection.silo.series'
+                funit = 77
+                inquire(file=trim(file_loc), exist=fexist)
+
+                if (cfl_dt) then
+                    startingStep = (t_step == n_start)
+                else
+                    startingStep = (t_step == t_step_start)
+                end if
+
+                if (.not. fexist .or. startingStep) then
+                    ! If the .series does not exist yet, create it, write headers, and first time step
+                    open(unit=funit, file=trim(file_loc), status='replace', action='write')
+                    
+                    ! Write JSON header
+                    write(funit, '(A)') '{' 
+                    write(funit, '(A)') '   "file-series-version" : "1.0",'
+                    write(funit, '(A)') '   "files" : ['
+                    
+                    ! Write first time step
+                    write(funit, '(A,I0,A,I0,A)') &
+                        '    { "name" : "collection_', t_step, & 
+                        '.silo", "time" : ', t_step, ' }'
+                     
+                    ! Write footer
+                    write(funit, '(A)') '  ]'
+                    write(funit, '(A)') '}' 
+                    
+                    close(funit)
+                else 
+                    ! Otherwise, simply append to previously created file
+                    open(unit=funit, file=trim(file_loc), status='old', position='append', action='readwrite')
+
+                    ! Backspace twice to write over ending brackets
+                    backspace(funit)
+                    backspace(funit)
+
+                    ! Write next time step
+                    write(funit, '(A,I0,A,I0,A)') &
+                        '    { "name" : "collection_', t_step, & 
+                        '.silo", "time" : ', t_step, ' }'
+
+                    ! Write footer
+                    write(funit, '(A)') '  ]'
+                    write(funit, '(A)') '}' 
+                    
+                    close(funit)
+                end if
             end if
 
             ! Binary Database Format
