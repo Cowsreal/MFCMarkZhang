@@ -128,7 +128,63 @@ contains
 
         end if
 
+        call s_smooth_ib_boundaries(1, levelset)
+        ! do i = 1, num_ibs
+        !     if(patch_ib(i)%smoothBoundaries) then
+        !     end if
+        ! end do
+
     end subroutine s_apply_ib_patches
+
+    subroutine s_smooth_ib_boundaries(patch_id, levelset)
+        type(levelset_field), intent(IN) :: levelset
+        integer, intent(IN) :: patch_id
+        real(wp), dimension(2:3) :: center
+        integer :: i, j
+        real(wp), dimension(1:3) :: xy_local
+        real(wp) :: r, alpha
+
+        real(wp), dimension(1:3, 1:3) :: inverse_rotation
+        
+        ! 2D airfoil
+        ! if(patch_ib(patch_id)%geometry == 4) then
+        !     center(1) = patch_ib(patch_id)%x_centroid
+        !     center(2) = patch_ib(patch_id)%y_centroid
+        !     inverse_rotation(:, :) = patch_ib(patch_id)%rotation_matrix_inverse(:, :)
+        ! end if
+
+
+        $:GPU_PARALLEL_LOOP(private='[i,j,r,alpha]', copyin='[patch_id]' collapse=2)
+        do j = 0, n
+            do i = 0, m
+!                xy_local = [x_cc(i) - center(1), y_cc(j) - center(2), 0._wp] ! get coordinate frame centered on IB
+!                xy_local = matmul(inverse_rotation, xy_local) ! rotate the frame into the IB's coordinates
+!                xy_local = xy_local - patch_ib(patch_id)%centroid_offset ! airfoils are a patch that require a centroid offset
+
+                ! This is for smoothing the x-velocity in a small neighborhood around the sphere for the bowshock case
+                r = levelset%sf(i, j, 0, patch_id)
+                ! Size of smoothing region
+
+                ! smooth for ~ 5 grid cells 
+                dr = 5 * max(dz, max(dx, dy))
+
+                if(r <= 0.0_wp .or. r > dr) then
+                    cycle
+                else
+                    ! Normalize the radial value to within [0, 1]
+                    alpha = r / dr
+                    ! Alpha is then mapped to tanh, with steepness 5.0
+                    alpha = 0.5_wp * (1.0_wp + tanh(5.0_wp * (alpha - 0.5_wp)))
+                    !alpha = alpha * alpha * (3 - 2 * alpha)
+                end if
+
+                ! Assume the current cell's velocity value is a good enough indication of the velocity values outside dr region
+                q_prim_vf(momxb)%sf(i, j, 0) = (1.0_wp - alpha) * 0.0_wp + alpha * q_prim_vf(momxb)%sf(i, j, 0)
+
+            end do
+        end do
+
+    end subroutine s_smooth_ib_boundaries(i, levelset)
 
     !> The circular patch is a 2D geometry that may be used, for
         !!              example, in creating a bubble or a droplet. The geometry
