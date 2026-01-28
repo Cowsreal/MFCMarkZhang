@@ -2,6 +2,7 @@
 !! @file m_initial_condition.f90
 !! @brief Contains module m_initial_condition
 
+#:include 'macros.fpp'
 !> @brief This module provides a platform that is analogous to constructive
 !!              solid geometry techniques and in this way allows for the creation
 !!              of a wide variety of initial conditions. Several 1D, 2D and 3D
@@ -203,6 +204,7 @@ contains
             call s_apply_ib_patches(ib_markers%sf, levelset, levelset_norm)
         end if
         call s_apply_icpp_patches(patch_id_fp, q_prim_vf)
+        call s_smooth_ib_boundaries(1, levelset)
 
         if (num_bc_patches > 0) call s_apply_boundary_patches(q_prim_vf, bc_type)
 
@@ -224,6 +226,60 @@ contains
         end if
 
     end subroutine s_generate_initial_condition
+
+subroutine s_smooth_ib_boundaries(patch_id, levelset)
+        type(levelset_field), intent(IN) :: levelset
+        integer, intent(IN) :: patch_id
+        real(wp), dimension(2:3) :: center
+        integer :: i, j, k
+        real(wp), dimension(1:3) :: xy_local
+        real(wp) :: r, alpha, dr
+
+        real(wp), dimension(1:3, 1:3) :: inverse_rotation
+        
+        ! 2D airfoil
+        ! if(patch_ib(patch_id)%geometry == 4) then
+        !     center(1) = patch_ib(patch_id)%x_centroid
+        !     center(2) = patch_ib(patch_id)%y_centroid
+        !     inverse_rotation(:, :) = patch_ib(patch_id)%rotation_matrix_inverse(:, :)
+        ! end if
+
+
+        print *, "Smoothing here!"
+        $:GPU_PARALLEL_LOOP(private='[i,j,k,r,alpha]', copyin='[patch_id]', collapse=2)
+        do k = 0, p
+            do j = 0, n
+                do i = 0, m
+    !                xy_local = [x_cc(i) - center(1), y_cc(j) - center(2), 0._wp] ! get coordinate frame centered on IB
+    !                xy_local = matmul(inverse_rotation, xy_local) ! rotate the frame into the IB's coordinates
+    !                xy_local = xy_local - patch_ib(patch_id)%centroid_offset ! airfoils are a patch that require a centroid offset
+
+                    ! This is for smoothing the x-velocity in a small neighborhood around the sphere for the bowshock case
+                    r = levelset%sf(i, j, k, patch_id)
+                    ! Size of smoothing region
+
+                    ! smooth for ~ 5 grid cells 
+                    dr = 10 * max(dz, max(dx, dy))
+
+                    if(r <= 0.0_wp .or. r > dr) then
+                        cycle
+                    else
+                        ! Normalize the radial value to within [0, 1]
+                        alpha = r / dr
+                        ! Alpha is then mapped to tanh, with steepness 5.0
+                        alpha = 0.5_wp * (1.0_wp + tanh(5.0_wp * (alpha - 0.5_wp)))
+                        !alpha = alpha * alpha * (3 - 2 * alpha)
+                    end if
+
+                    ! Assume the current cell's velocity value is a good enough indication of the velocity values outside dr region
+                    q_prim_vf(momxb)%sf(i, j, k) = (1.0_wp - alpha) * 0.0_wp + alpha * q_prim_vf(momxb)%sf(i, j, k)
+
+                end do
+            end do
+        end do
+    end subroutine s_smooth_ib_boundaries
+
+
 
     !>  Deallocation procedures for the module
     impure subroutine s_finalize_initial_condition_module
