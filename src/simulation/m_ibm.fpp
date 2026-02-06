@@ -141,7 +141,85 @@ contains
         call s_compute_interpolation_coeffs(ghost_points)
         $:GPU_UPDATE(device='[ghost_points]')
 
+
     end subroutine s_ibm_setup
+
+    subroutine s_smooth_ib_boundaries(q_cons_vf, patch_id)
+        type(scalar_field), dimension(sys_size), intent(INOUT) :: q_cons_vf
+        integer, intent(IN) :: patch_id
+
+
+        type(ghost_point) :: innerp
+        integer :: i, j, k, l
+        real(wp) :: r, alpha, dr, dx_avg, dy_avg, dz_avg
+
+        dr = 0
+
+        ! $:GPU_PARALLEL_LOOP(private='[i,j,k,r,alpha]', copyin='[patch_id, dr]', collapse=3)
+        ! do k = 0, p
+        !     do j = 0, n
+        !         do i = 0, m
+        !                    r = levelset%sf(i, j, k, patch_id)
+        !             if(r <= 0.0_wp .or. r > dr ) then
+        !                 ! Do nothing if outside range
+        !             else
+        !                 ! Normalize the radial value to within [0, 1]
+        !                 alpha = r / dr
+        !
+        !                 ! Alpha is then mapped to cosine
+        !                 alpha = 0.5_wp * (1.0_wp - cos(alpha * pi))
+        !
+        !                 ! Assume the current cell's velocity value is locally a good enough indication of the velocity values outside dr region
+        !                 q_prim_vf(momxb)%sf(i, j, k) = alpha * q_prim_vf(momxb)%sf(i, j, k)
+        !                 q_prim_vf(momxb + 1)%sf(i, j, k) = alpha * q_prim_vf(momxb + 1)%sf(i, j, k)
+        !                 q_prim_vf(momxb + 2)%sf(i, j, k) = alpha * q_prim_vf(momxb + 2)%sf(i, j, k)
+        !             end if
+        !         end do
+        !     end do
+        ! end do
+
+        if (num_inner_gps > 0) then
+            $:GPU_PARALLEL_LOOP(private='[i,j,k,l,dx_avg,dy_avg,dz_avg,dr,alpha,r,innerp]', copyin='[patch_id,patch_ib,dx,dy,dz]')
+            do i = 1, num_inner_gps
+                innerp = inner_points(i)
+                j = innerp%loc(1)
+                k = innerp%loc(2)
+                l = innerp%loc(3)
+
+                dx_avg = (dx(j - 1) + dx(j) + dx(j + 1)) / 3
+                dy_avg = (dy(k - 1) + dy(k) + dy(k + 1)) / 3
+                if (p == 0) then
+                    dr = (3 + patch_ib(patch_id)%smoothing_radius) * max(dx_avg, dy_avg)
+                else
+                    dz_avg = (dz(l - 1) + dz(l) + dz(l + 1)) / 3
+!                        dr = (3 + patch_ib(patch_id)%smoothing_radius) * max(dz, max(dx, dy))
+                end if
+
+                r = abs(levelset%sf(j, k, l, patch_id))
+                if(r > dr) then
+                    ! Do nothing if outside range
+                else
+                    ! Normalize the radial value to within [0, 1]
+                    alpha = r / dr
+
+                    ! Alpha is then mapped to cosine
+                    alpha = 0.5_wp * (1.0_wp - cos(alpha * pi))
+
+                    print *, "HI"
+                    ! Assume the current cell's velocity value is locally a good enough indication of the velocity values outside dr region
+                    q_cons_vf(momxb)%sf(j, k, l) = (1 - alpha) * q_cons_vf(momxb)%sf(j, k, l)
+                    q_cons_vf(momxb + 1)%sf(j, k, l) = (1 - alpha) * q_cons_vf(momxb + 1)%sf(j, k, l)
+                    q_cons_vf(E_idx)%sf(j, k, l) = (1 - alpha) * q_cons_vf(E_idx)%sf(j, k, l)
+                    q_cons_vf(contxb)%sf(j, k, l) = (1 - alpha) * q_cons_vf(contxb)%sf(j, k, l)
+                    q_cons_vf(momxb)%sf(j, k, l) = 500.0_wp
+                    !q_prim_vf(momxb + 2)%sf(j, k, l) = alpha * q_prim_vf(momxb + 2)%sf(j, k, l)
+                end if
+            end do
+            $:END_GPU_PARALLEL_LOOP()
+        end if
+
+    end subroutine s_smooth_ib_boundaries
+
 
     subroutine s_populate_ib_buffers()
 
@@ -498,7 +576,7 @@ contains
 
                 $:GPU_LOOP(parallelism='[seq]')
                 do q = momxb, momxe
-                    q_cons_vf(q)%sf(j, k, l) = 0._wp
+!                    q_cons_vf(q)%sf(j, k, l) = 0._wp
                 end do
             end do
             $:END_GPU_PARALLEL_LOOP()

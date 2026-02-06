@@ -637,7 +637,6 @@ contains
                     call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
                 end if
             end if
-
         end do
 
         ! Adaptive dt: final stage

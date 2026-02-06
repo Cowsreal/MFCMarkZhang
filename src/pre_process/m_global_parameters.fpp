@@ -585,6 +585,8 @@ contains
             patch_ib(i)%rotation_matrix(2, 2) = 1._wp
             patch_ib(i)%rotation_matrix(3, 3) = 1._wp
             patch_ib(i)%rotation_matrix_inverse = patch_ib(i)%rotation_matrix
+
+            patch_ib(i)%smoothing_radius = 0
         end do
 
         chem_params%gamma_method = 1

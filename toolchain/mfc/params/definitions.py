@@ -85,6 +85,7 @@ _ATTR_DESCS = {
     # IB specific
     "slip": "Enable slip condition",
     "moving_ibm": "Enable moving boundary",
+    "smoothing_radius": "Smoothing for IBM",
     "angular_vel": "Angular velocity",
     "mass": "Mass",
     # BC specific
@@ -749,7 +750,7 @@ def _load():  # pylint: disable=too-many-locals,too-many-statements
         for a in ["geometry", "moving_ibm"]:
             _r(f"{px}{a}", INT, {"ib"})
         for a, pt in [("radius", REAL), ("theta", REAL), ("slip", LOG), ("c", REAL),
-                      ("p", REAL), ("t", REAL), ("m", REAL), ("mass", REAL)]:
+                      ("p", REAL), ("t", REAL), ("m", REAL), ("mass", REAL), ("smoothing_radius", INT)]:
             _r(f"{px}{a}", pt, {"ib"})
         for j in range(1, 4):
             _r(f"{px}angles({j})", REAL, {"ib"})

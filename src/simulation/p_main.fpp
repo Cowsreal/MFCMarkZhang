@@ -54,6 +54,8 @@ program p_main
     call s_initialize_gpu_vars()
     call nvtxEndRange
 
+
+
     ! Setting the time-step iterator to the first time-step
     if (cfl_dt) then
         t_step = 0

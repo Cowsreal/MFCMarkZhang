@@ -35,12 +35,10 @@ def _build_schema():
     from ..params import REGISTRY
     return REGISTRY.get_json_schema()
 
-
 def _get_validator_func():
     """Get the cached validator from registry."""
     from ..params import REGISTRY
     return REGISTRY.get_validator()
-
 
 def _get_target_params():
     """Get valid params for each target by parsing Fortran namelists."""
