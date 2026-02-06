@@ -1397,7 +1397,6 @@ contains
         if (hypoelasticity) call s_initialize_hypoelastic_module()
         if (hyperelasticity) call s_initialize_hyperelastic_module()
 
-        if (mhd .and. powell) call s_initialize_mhd_powell_module
     end subroutine s_initialize_modules
 
     impure subroutine s_initialize_mpi_domain
