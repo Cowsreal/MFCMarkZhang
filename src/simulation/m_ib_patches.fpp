@@ -86,6 +86,8 @@ contains
                                 call s_ib_3D_airfoil(i, ib_markers, xp, yp, zp)
                             elseif (patch_ib(i)%geometry == 12) then
                                 call s_ib_3d_model(i, ib_markers, xp, yp, zp)
+                            elseif (patch_ib(i)%geometry == 13) then
+                                call s_ib_cylindrical_shell(i, ib_markers)
                             end if
                         end do
                     end do
@@ -112,6 +114,8 @@ contains
                             call s_ib_model(i, ib_markers, xp, yp)
                         elseif (patch_ib(i)%geometry == 6) then
                             call s_ib_ellipse(i, ib_markers, xp, yp)
+                        elseif (patch_ib(i)%geometry == 7) then
+                            call s_ib_circular_shell(i, ib_markers)
                         end if
                     end do
                 end do
@@ -177,6 +181,96 @@ contains
         $:END_GPU_PARALLEL_LOOP()
 
     end subroutine s_ib_circle
+
+    !> The circular patch is a 2D geometry that may be used, for
+        !!              example, in creating a bubble or a droplet. The geometry
+        !!              of the patch is well-defined when its centroid and radius
+        !!              are provided. Note that the circular patch DOES allow for
+        !!              the smoothing of its boundary.
+        !! @param patch_id is the patch identifier
+        !! @param ib_markers_sf Array to track patch ids
+    subroutine s_ib_circular_shell(patch_id, ib_markers)
+
+        integer, intent(in) :: patch_id
+        type(integer_field), intent(inout) :: ib_markers
+        real(wp), dimension(1:2) :: center
+        real(wp) :: inner_radius, radius, r
+
+        integer :: i, j, k !< Generic loop iterators
+
+        ! Transferring the circular patch's radius, centroid, smearing patch
+        ! identity and smearing coefficient information
+
+        center(1) = patch_ib(patch_id)%x_centroid
+        center(2) = patch_ib(patch_id)%y_centroid
+        radius = patch_ib(patch_id)%radius
+        inner_radius = patch_ib(patch_id)%inner_radius
+
+        ! Checking whether the circle covers a particular cell in the domain
+        ! and verifying whether the current patch has permission to write to
+        ! that cell. If both queries check out, the primitive variables of
+        ! the current patch are assigned to this cell.
+
+        $:GPU_PARALLEL_LOOP(private='[i,j,r]', copy='[ib_markers]',&
+                  & copyin='[patch_id,center,radius,inner_radius]', collapse=2)
+        do j = 0, n
+            do i = 0, m
+                r = (x_cc(i) - center(1))**2 + (y_cc(j) - center(2))**2
+                if (r < radius**2 .and. &
+                    r > inner_radius**2) then
+                    ib_markers%sf(i, j, 0) = patch_id
+                end if
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_ib_circular_shell
+
+    !> The circular patch is a 2D geometry that may be used, for
+        !!              example, in creating a bubble or a droplet. The geometry
+        !!              of the patch is well-defined when its centroid and radius
+        !!              are provided. Note that the circular patch DOES allow for
+        !!              the smoothing of its boundary.
+        !! @param patch_id is the patch identifier
+        !! @param ib_markers_sf Array to track patch ids
+    subroutine s_ib_cylindrical_shell(patch_id, ib_markers)
+
+        integer, intent(in) :: patch_id
+        type(integer_field), intent(inout) :: ib_markers
+        real(wp), dimension(1:2) :: center
+        real(wp) :: inner_radius, radius, r
+
+        integer :: i, j, k !< Generic loop iterators
+
+        ! Transferring the circular patch's radius, centroid, smearing patch
+        ! identity and smearing coefficient information
+
+        center(1) = patch_ib(patch_id)%x_centroid
+        center(2) = patch_ib(patch_id)%y_centroid
+        radius = patch_ib(patch_id)%radius
+        inner_radius = patch_ib(patch_id)%inner_radius
+
+        ! Checking whether the circle covers a particular cell in the domain
+        ! and verifying whether the current patch has permission to write to
+        ! that cell. If both queries check out, the primitive variables of
+        ! the current patch are assigned to this cell.
+
+        $:GPU_PARALLEL_LOOP(private='[i,j,r]', copy='[ib_markers]',&
+                  & copyin='[patch_id,center,radius,inner_radius]', collapse=2)
+        do k = 0, p
+            do j = 0, n
+                do i = 0, m
+                    r = (x_cc(i) - center(1))**2 + (y_cc(j) - center(2))**2
+                    if (r < radius**2 .and. &
+                        r > inner_radius**2) then
+                        ib_markers%sf(i, j, k) = patch_id
+                    end if
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_ib_cylindrical_shell
 
     !> @brief Marks cells inside a 2D NACA 4-digit airfoil immersed boundary using upper and lower surface grids.
     !! @param patch_id is the patch identifier

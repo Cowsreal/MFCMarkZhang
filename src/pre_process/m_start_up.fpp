@@ -815,6 +815,9 @@ contains
         real(wp), dimension(:), intent(inout) :: proc_time
         real(wp), intent(inout) :: time_avg, time_final
         logical, intent(inout) :: file_exists
+        real(wp), dimension(1, sys_size) :: norm_loc
+        character(len=50) :: file_loc
+        integer :: i, k, j
 
         call s_mpi_barrier()
 
@@ -823,6 +826,7 @@ contains
         end if
 
         if (proc_rank == 0) then
+
             time_final = 0._wp
             if (num_procs == 1) then
                 time_final = time_avg

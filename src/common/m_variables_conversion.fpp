@@ -187,6 +187,60 @@ contains
         #:endif
 
     end subroutine s_compute_pressure
+    
+    !>  This procedure yields the pressure given conservative variables
+    !>  for IGR purposes
+        !! @param q_cons_vf Conservative variables
+        !! @param gamma Specific Heat Ratio
+        !! @param rho Density
+        !! @param qv fluid reference energy
+        !! @param rhoYks Species partial densities
+        !! @param pres Pressure to calculate
+        !! @param T Temperature
+        !! @param stress Shear Stress
+        !! @param mom Momentum
+        !! @param G Shear modulus (optional)
+        !! @param pres_mag Magnetic pressure (optional)
+    ! subroutine s_compute_pressure_igr(q_cons_vf, i, j, k, pres)
+    !     $:GPU_ROUTINE(function_name='s_compute_pressure_igr',parallelism='[seq]', &
+    !         & cray_inline=True)
+    !     type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
+    !     integer, intent(in) :: i, j, k
+    !     real(wp), intent(out) :: pres
+    !     #:if not MFC_CASE_OPTIMIZATION and USING_AMD
+    !         real(wp), dimension(3), intent(INOUT) :: alpha_arr, alpha_rho_arr
+    !     #:else
+    !         real(wp), dimension(num_fluids), intent(INOUT) :: alpha_arr, alpha_rho_arr
+    !     #:endif
+    !
+    !     integer :: l
+    !     real(wp) :: dynPres, alpha_sum
+    !     real(wp) :: rho, gamma, pi_inf
+    !
+    !     alpha_sum = 0._wp
+    !     dynPres = 0._wp
+    !     if (num_fluids == 1) then
+    !         alpha_rho_arr(1) = q_cons_vf(contxb)%sf(i, j, k)
+    !         alpha_arr(1) = 1._wp
+    !     else
+    !         $:GPU_LOOP(parallelism='[seq]')
+    !         do l = 1, num_fluids - 1
+    !             alpha_rho_arr(l) = q_cons_vf(contxb + l - 1)%sf(i, j, k)
+    !             alpha_arr(l) = q_cons_vf(E_idx + l)%sf(i, j, k)
+    !             alpha_sum = alpha_sum + q_vf(E_idx + l)%sf(i, j, k)
+    !         end do
+    !         alpha_rho_arr(num_fluids) = q_cons_vf(num_fluids)%sf(i, j, k)
+    !         alpha_arr(num_fluids) = 1._wp - alpha_sum
+    !     end if
+    !
+    !     call s_convert_species_to_mixture_variables_acc(rho, gamma, pi_inf, 0._wp, alphas, &
+    !                                                                             alpha_rhos, 0._wp)
+    !     do l = 0, num_dims - 1
+    !         dynPres = dynPres + q_cons_vf(momxb + l)%sf(i, j, k) ** 2 / (2._wp * rho)
+    !     end do
+    !     pres = (q_cons_vf(E_idx)%sf(i, j, k) - dynPres - pi_inf) / gamma
+    !
+    ! end subroutine
 
     !>  This subroutine is designed for the gamma/pi_inf model
         !!      and provided a set of either conservative or primitive

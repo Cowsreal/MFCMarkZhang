@@ -962,10 +962,12 @@ contains
 
             write (file_loc, '(I0,A)') t_step, '.dat'
             file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+
             inquire (FILE=trim(file_loc), EXIST=file_exist)
             if (file_exist .and. proc_rank == 0) then
                 call MPI_FILE_DELETE(file_loc, mpi_info_int, ierr)
             end if
+
             call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, ior(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
                                mpi_info_int, ifile, ierr)
 

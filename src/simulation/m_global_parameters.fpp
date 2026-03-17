@@ -870,7 +870,10 @@ contains
             patch_ib(i)%t = dflt_real
             patch_ib(i)%m = dflt_real
             patch_ib(i)%p = dflt_real
+            !patch_ib(i)%smooth = 0._wp
             patch_ib(i)%slip = .false.
+            patch_ib(i)%true_bcs = .false.
+            patch_ib(i)%inner_radius = dflt_real
 
             ! Proper default values for translating STL models
             patch_ib(i)%model_scale(:) = 1._wp

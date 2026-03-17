@@ -21,7 +21,7 @@ module m_compute_levelset
 
     implicit none
 
-    private; public :: s_apply_levelset
+    private; public :: s_apply_levelset, s_compute_levelset
 
 contains
 
@@ -30,58 +30,59 @@ contains
 
         type(ghost_point), dimension(:), intent(inout) :: gps
         integer, intent(in) :: num_gps
+        integer :: i
 
-        integer :: i, patch_id, patch_geometry
-
-        !  3D Patch Geometries
-        if (p > 0) then
-
-            $:GPU_PARALLEL_LOOP(private='[i,patch_id,patch_geometry]', copy='[gps]', copyin='[patch_ib(1:num_ibs),Np]')
+        if (num_gps > 0) then
+            $:GPU_PARALLEL_LOOP(private='[i]', copy='[gps]', copyin='[Np,patch_ib(1:num_ibs)]')
             do i = 1, num_gps
-
-                patch_id = gps(i)%ib_patch_id
-                patch_geometry = patch_ib(patch_id)%geometry
-
-                if (patch_geometry == 8) then
-                    call s_sphere_levelset(gps(i))
-                elseif (patch_geometry == 9) then
-                    call s_cuboid_levelset(gps(i))
-                elseif (patch_geometry == 10) then
-                    call s_cylinder_levelset(gps(i))
-                elseif (patch_geometry == 11) then
-                    call s_3d_airfoil_levelset(gps(i))
-                elseif (patch_geometry == 12) then
-                    call s_model_levelset(gps(i))
-                end if
+                call s_compute_levelset(gps(i))
             end do
             $:END_GPU_PARALLEL_LOOP()
-
-            ! 2D Patch Geometries
-        elseif (n > 0) then
-
-            $:GPU_PARALLEL_LOOP(private='[i,patch_id,patch_geometry]', copy='[gps]', copyin='[Np,patch_ib(1:num_ibs)]')
-            do i = 1, num_gps
-
-                patch_id = gps(i)%ib_patch_id
-                patch_geometry = patch_ib(patch_id)%geometry
-
-                if (patch_geometry == 2) then
-                    call s_circle_levelset(gps(i))
-                elseif (patch_geometry == 3) then
-                    call s_rectangle_levelset(gps(i))
-                elseif (patch_geometry == 4) then
-                    call s_airfoil_levelset(gps(i))
-                elseif (patch_geometry == 5) then
-                    call s_model_levelset(gps(i))
-                elseif (patch_geometry == 6) then
-                    call s_ellipse_levelset(gps(i))
-                end if
-            end do
-            $:END_GPU_PARALLEL_LOOP()
-
         end if
 
     end subroutine s_apply_levelset
+
+    !> @brief Dispatches level-set distance and normal computations for all ghost points based on their patch geometry type.
+    impure subroutine s_compute_levelset(gp)
+        $:GPU_ROUTINE(parallelism='[seq]')
+
+        type(ghost_point), intent(inout) :: gp
+        integer :: i, patch_id, ib_geometry
+
+        patch_id = gp%ib_patch_id
+        ib_geometry = patch_ib(patch_id)%geometry
+
+        !  2D Patch Geometries
+        select case(ib_geometry)
+        case (IB_CIRCLE)
+            call s_circle_levelset(gp)
+        case (IB_RECTANGLE)
+            call s_rectangle_levelset(gp)
+        case (IB_2D_AIRFOIL)
+            call s_airfoil_levelset(gp)
+        case (IB_2D_MODEL)
+            call s_model_levelset(gp)
+        case (IB_ELLIPSE)
+            call s_ellipse_levelset(gp)
+        case (IB_CIRCULAR_SHELL)
+            call s_circular_shell_levelset(gp)
+
+        !  3D Patch Geometries
+        case (IB_SPHERE)
+            call s_sphere_levelset(gp)
+        case (IB_CUBOID)
+            call s_cuboid_levelset(gp)
+        case (IB_CYLINDER)
+            call s_cylinder_levelset(gp)
+        case (IB_3D_AIRFOIL)
+            call s_3d_airfoil_levelset(gp)
+        case (IB_3D_MODEL)
+            call s_model_levelset(gp)
+        case (IB_CYLINDRICAL_SHELL)
+            call s_cylindrical_shell_levelset(gp)
+        end select
+
+    end subroutine s_compute_levelset
 
     !> @brief Computes the signed distance and outward normal from a ghost point to a circular immersed boundary.
     subroutine s_circle_levelset(gp)
@@ -424,6 +425,83 @@ contains
         gp%levelset = -0.5_wp*(-quadratic_coeffs(2) + sqrt(quadratic_coeffs(2)**2._wp - 4._wp*quadratic_coeffs(1)*quadratic_coeffs(3)))/quadratic_coeffs(1)
 
     end subroutine s_ellipse_levelset
+
+    !> @brief Computes the signed distance and outward normal from a ghost point to a circular shell immersed boundary.
+    subroutine s_circular_shell_levelset(gp)
+
+        $:GPU_ROUTINE(parallelism='[seq]')
+
+        type(ghost_point), intent(inout) :: gp
+
+        real(wp) :: half_radius, dist, radius
+        real(wp), dimension(2) :: center
+        real(wp), dimension(3) :: dist_vec
+
+        integer :: i, j, ib_patch_id !< Loop index variables
+
+        ib_patch_id = gp%ib_patch_id
+        i = gp%loc(1)
+        j = gp%loc(2)
+
+        half_radius = (patch_ib(ib_patch_id)%radius + patch_ib(ib_patch_id)%inner_radius) / 2._wp
+
+        dist_vec(1) = x_cc(i) - patch_ib(ib_patch_id)%x_centroid
+        dist_vec(2) = y_cc(j) - patch_ib(ib_patch_id)%y_centroid
+        dist_vec(3) = 0._wp
+        dist = sqrt(sum(dist_vec**2))
+
+        if (f_approx_equal(dist, 0._wp)) then
+            gp%levelset_norm = 0._wp
+        else
+            if (dist < half_radius) then
+                gp%levelset = -dist + patch_ib(ib_patch_id)%inner_radius
+                gp%levelset_norm = -dist_vec(:)/dist
+            else
+                gp%levelset = dist - patch_ib(ib_patch_id)%radius
+                gp%levelset_norm = dist_vec(:)/dist
+            end if
+        end if
+
+    end subroutine s_circular_shell_levelset
+
+    !> @brief Computes the signed distance and outward normal from a ghost point to a circular shell immersed boundary.
+    subroutine s_cylindrical_shell_levelset(gp)
+
+        $:GPU_ROUTINE(parallelism='[seq]')
+
+        type(ghost_point), intent(inout) :: gp
+
+        real(wp) :: half_radius, dist, radius
+        real(wp), dimension(2) :: center
+        real(wp), dimension(3) :: dist_vec
+
+        integer :: i, j, ib_patch_id !< Loop index variables
+
+        ib_patch_id = gp%ib_patch_id
+        i = gp%loc(1)
+        j = gp%loc(2)
+
+        half_radius = (patch_ib(ib_patch_id)%radius + patch_ib(ib_patch_id)%inner_radius) / 2._wp
+
+        dist_vec(1) = x_cc(i) - patch_ib(ib_patch_id)%x_centroid
+        dist_vec(2) = y_cc(j) - patch_ib(ib_patch_id)%y_centroid
+        dist_vec(3) = 0._wp
+        dist = sqrt(sum(dist_vec**2))
+
+        if (f_approx_equal(dist, 0._wp)) then
+            gp%levelset_norm = 0._wp
+        else
+            if (dist < half_radius) then
+                gp%levelset = -dist + patch_ib(ib_patch_id)%inner_radius
+                gp%levelset_norm = -dist_vec(:)/dist
+            else
+                gp%levelset = dist - patch_ib(ib_patch_id)%radius
+                gp%levelset_norm = dist_vec(:)/dist
+            end if
+        end if
+
+    end subroutine s_cylindrical_shell_levelset
+
 
     !> @brief Computes the signed distance and outward normal from a ghost point to the nearest face of a cuboid immersed boundary.
     subroutine s_cuboid_levelset(gp)

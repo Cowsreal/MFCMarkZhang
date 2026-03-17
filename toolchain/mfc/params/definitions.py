@@ -1077,7 +1077,7 @@ def _load():  # pylint: disable=too-many-locals,too-many-statements
         px = f"patch_ib({i})%"
         for a in ["geometry", "moving_ibm"]:
             _r(f"{px}{a}", INT, {"ib"})
-        for a, pt in [("radius", REAL), ("theta", REAL), ("slip", LOG), ("c", REAL),
+        for a, pt in [("true_bcs", LOG), ("smooth", REAL), ("radius", REAL), ("steep", REAL), ("shift", REAL), ("inner_radius", REAL), ("theta", REAL), ("slip", LOG), ("c", REAL),
                       ("p", REAL), ("t", REAL), ("m", REAL), ("mass", REAL)]:
             _r(f"{px}{a}", pt, {"ib"})
         for j in range(1, 4):

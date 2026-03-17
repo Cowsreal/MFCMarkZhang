@@ -789,6 +789,10 @@ contains
     impure subroutine s_perform_time_step(t_step, time_avg)
         integer, intent(inout) :: t_step
         real(wp), intent(inout) :: time_avg
+        real(wp) :: io_time_avg
+        real(wp) :: start1, finish1
+        integer :: nt
+
 
         integer :: i
 
@@ -846,6 +850,24 @@ contains
         end if
 
         mytime = mytime + dt
+
+        if(t_step == 0 .and. ib) then
+            if(igr) then
+                call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
+            else
+                call s_populate_variables_buffers(bc_type, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
+            end if
+            call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
+            if(igr) then
+                call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
+            else
+                call s_populate_variables_buffers(bc_type, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
+            end if
+            if(igr) then
+                call s_smooth_ib_boundaries(bc_type, q_cons_ts(1)%vf)
+               ! call s_save_data(t_step, start1, finish1, io_time_avg, nt)
+            end if
+        end if
 
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
         if (any(time_stepper == (/1, 2, 3/))) then
@@ -931,6 +953,63 @@ contains
         integer :: stor
 
         integer :: save_count
+        real(wp) :: L2_vel, L2_pres, velMag, dynPres, pres, anal_vel, anal_pres, r, presDiff, presSum
+        character(len=50) :: file_loc
+        integer :: cells
+        
+        ! cells = 0
+        ! L2_vel = 0._wp
+        ! L2_pres = 0._wp
+        ! presDiff = 0
+        ! $:GPU_PARALLEL_LOOP(collapse=2, private='[presDiff,k,j,velMag,dynPres,pres,anal_vel,anal_pres,r]',&
+        ! copy='[L2_vel,L2_pres,cells,presSum]')
+        ! do k = 0, n
+        !     do j = 0, m
+        !         r = x_cc(j)**2 + y_cc(k)**2
+        !         if(r > 0.5**2 .and. r < 1.0) then
+        !             anal_pres = (2._wp/3._wp)**2 * r / 2._wp - (2._wp/3._wp)**2 / (2._wp * r) - (2._wp/3._wp)**2 * log(r)
+        !             r = sqrt(r)
+        !             anal_vel = abs((-2._wp/3._wp) * r + 2._wp/3._wp / r)
+        !             if(igr) then
+        !                 velMag = sqrt((q_cons_ts(1)%vf(momxb)%sf(j,k,0)/q_cons_ts(1)%vf(contxb)%sf(j,k,0))**2 + (q_cons_ts(1)%vf(momxb+1)%sf(j,k,0)/q_cons_ts(1)%vf(contxb)%sf(j,k,0))**2)
+        !                 dynPres = 0.5_wp * (q_cons_ts(1)%vf(momxb)%sf(j,k,0)**2/q_cons_ts(1)%vf(contxb)%sf(j,k,0) + q_cons_ts(1)%vf(momxb+1)%sf(j,k,0)**2/q_cons_ts(1)%vf(contxb)%sf(j,k,0))
+        !                 pres = (q_cons_ts(1)%vf(E_idx)%sf(j,k,0) - dynPres) * 0.4_wp
+        !                 presDiff = pres - anal_pres
+        !                 $:GPU_ATOMIC(atomic='update') 
+        !                 L2_vel = L2_vel + (velMag - anal_vel) ** 2
+        !                 $:GPU_ATOMIC(atomic='update') 
+        !                 L2_pres = L2_pres + presDiff ** 2
+        !                 $:GPU_ATOMIC(atomic='update') 
+        !                 presSum = presSum + presDiff
+        !                 $:GPU_ATOMIC(atomic='update') 
+        !                 cells = cells + 1
+        !             else
+        !                 velMag = sqrt(q_prim_vf(momxb)%sf(j,k,0)**2 + q_prim_vf(momxb+1)%sf(j,k,0)**2)
+        !                 pres = q_prim_vf(E_idx)%sf(j,k,0)
+        !                 presDiff = pres - anal_pres
+        !                 $:GPU_ATOMIC(atomic='update') 
+        !                 L2_vel = L2_vel + (velMag - anal_vel) ** 2
+        !                 $:GPU_ATOMIC(atomic='update') 
+        !                 L2_pres = L2_pres + presDiff ** 2
+        !                 $:GPU_ATOMIC(atomic='update') 
+        !                 presSum = presSum + presDiff
+        !                 $:GPU_ATOMIC(atomic='update') 
+        !                 cells = cells + 1
+        !             end if
+        !         end if
+        !     end do
+        ! end do
+        ! $:END_GPU_PARALLEL_LOOP()
+        ! L2_pres = L2_pres - presSum ** 2 / cells
+        ! L2_vel = L2_vel * dx(1) * dy(1)
+        ! L2_pres = L2_pres * dx(1) * dy(1)
+        !
+        ! if (proc_rank == 0) then
+        !      file_loc = trim(case_dir)//'/norms.csv'
+        !      open (unit=92, file=trim(file_loc), status='UNKNOWN', position='APPEND', action='WRITE')
+        !      write (92, '(ES16.8, 10(:, ",", ES16.8))') mytime, L2_vel, L2_pres
+        !      close (92)
+        ! end if
 
         if (down_sample) then
             call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf)
@@ -964,7 +1043,8 @@ contains
                 do k = 0, n
                     do j = 0, m
                         if (ieee_is_nan(real(q_cons_ts(stor)%vf(i)%sf(j, k, l), kind=wp))) then
-                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
+                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p, x_cc(j), y_cc(k), z_cc(l)
+
                             call s_mpi_abort("NaN(s) in timestep output.")
                         end if
                     end do
@@ -1096,6 +1176,9 @@ contains
         if (model_eqns == 3) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
         if (ib) then
             call s_ibm_setup()
+            if(igr) then
+            !    call s_smooth_ib_boundaries(q_cons_ts(1)%vf)
+            end if
             call s_write_ib_data_file(0)
         end if
         if (bodyForces) call s_initialize_body_forces_module()

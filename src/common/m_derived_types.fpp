@@ -322,9 +322,14 @@ module m_derived_types
 
         real(wp) :: length_x, length_y, length_z !< Dimensions of the patch. x,y,z Lengths.
         real(wp) :: radius !< Dimensions of the patch. radius.
+        real(wp) :: smooth
         real(wp) :: theta
+        real(wp) :: inner_radius
+        real(wp) :: steep
+        real(wp) :: shift
 
         logical :: slip
+        logical :: true_bcs !< Enables proper boundary conditions for velocity (slip/no slip)
 
         !! STL or OBJ model input parameter
         character(LEN=pathlen_max) :: model_filepath !<

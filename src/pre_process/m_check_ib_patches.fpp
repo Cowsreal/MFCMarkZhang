@@ -51,6 +51,8 @@ contains
                 ! Constraints on the geometric initial condition patch parameters
                 if (patch_ib(i)%geometry == 2) then
                     call s_check_circle_ib_patch_geometry(i)
+                else if (patch_ib(i)%geometry == 7) then
+                    call s_check_circular_shell_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 3) then
                     call s_check_rectangle_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 8) then
@@ -63,6 +65,8 @@ contains
                     call s_check_3d_airfoil_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 10) then
                     call s_check_cylinder_ib_patch_geometry(i)
+                else if (patch_ib(i)%geometry == 13) then
+                    call s_check_cylindrical_shell_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 5 .or. &
                          patch_ib(i)%geometry == 12) then
                     call s_check_model_ib_patch_geometry(i)
@@ -99,6 +103,47 @@ contains
             'in circle IB patch '//trim(iStr))
 
     end subroutine s_check_circle_ib_patch_geometry
+
+        !>  This subroutine verifies that the geometric parameters of
+        !!      the circular cavity patch have consistently been inputted by the
+        !!      user.
+        !!  @param patch_id Patch identifier
+    impure subroutine s_check_circular_shell_ib_patch_geometry(patch_id)
+
+        integer, intent(in) :: patch_id
+
+        call s_int_to_str(patch_id, iStr)
+
+        @:PROHIBIT(n == 0 .or. p > 0 &
+            .or. patch_ib(patch_id)%radius <= 0._wp &
+            .or. patch_ib(patch_id)%inner_radius <= 0._wp &
+            .or. patch_ib(patch_id)%radius <= patch_ib(patch_id)%inner_radius &
+            .or. f_is_default(patch_ib(patch_id)%x_centroid) &
+            .or. f_is_default(patch_ib(patch_id)%y_centroid), &
+            'in circular cavity IB patch '//trim(iStr))
+
+    end subroutine s_check_circular_shell_ib_patch_geometry
+
+        !>  This subroutine verifies that the geometric parameters of
+        !!      the circular cavity patch have consistently been inputted by the
+        !!      user.
+        !!  @param patch_id Patch identifier
+    impure subroutine s_check_cylindrical_shell_ib_patch_geometry(patch_id)
+
+        integer, intent(in) :: patch_id
+
+        call s_int_to_str(patch_id, iStr)
+
+        @:PROHIBIT(n == 0 .or. p > 0 &
+            .or. patch_ib(patch_id)%radius <= 0._wp &
+            .or. patch_ib(patch_id)%inner_radius <= 0._wp &
+            .or. patch_ib(patch_id)%radius <= patch_ib(patch_id)%inner_radius &
+            .or. f_is_default(patch_ib(patch_id)%x_centroid) &
+            .or. f_is_default(patch_ib(patch_id)%y_centroid), &
+            'in circular cavity IB patch '//trim(iStr))
+
+    end subroutine s_check_cylindrical_shell_ib_patch_geometry
+
 
     !>  This subroutine verifies that the geometric parameters of
         !!      the ellipse patch have consistently been inputted by the

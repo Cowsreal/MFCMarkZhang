@@ -43,7 +43,7 @@ module m_time_steppers
     use m_body_forces
 
     use m_derived_variables
-
+    
     implicit none
 
     type(vector_field), allocatable, dimension(:) :: q_cons_ts !<
@@ -527,7 +527,6 @@ contains
 
         integer :: i, j, k, l, q, s !< Generic loop iterator
         real(wp) :: start, finish
-        integer :: dest
 
         call cpu_time(start)
         call nvtxStartRange("TIMESTEP")
@@ -637,6 +636,14 @@ contains
                     call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
                 else
                     call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
+                end if
+
+                if(s == 3) then
+                    if(igr) then
+                        call s_compute_ib_forces(q_cons_ts(1)%vf, fluid_pp)
+                    else
+                        call s_compute_ib_forces(q_prim_vf, fluid_pp)
+                    end if
                 end if
             end if
 
@@ -811,7 +818,8 @@ contains
 
         do i = 1, num_ibs
             if (s == 1) then
-                patch_ib(i)%step_vel = patch_ib(i)%vel
+                !patch_ib(i)%step_vel = patch_ib(i)%vel
+                patch_ib(i)%step_vel = 0._wp
                 patch_ib(i)%step_angular_vel = patch_ib(i)%angular_vel
                 patch_ib(i)%step_angles = patch_ib(i)%angles
                 patch_ib(i)%step_x_centroid = patch_ib(i)%x_centroid

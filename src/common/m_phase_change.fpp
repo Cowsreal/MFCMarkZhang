@@ -97,7 +97,7 @@ contains
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
             real(wp), dimension(3) :: p_infOV, p_infpT, p_infSL, sk, hk, gk, ek, rhok
         #:else
-            real(wp), dimension(num_fluids) :: p_infOV, p_infpT, p_infSL, sk, hk, gk, ek, rhok
+            real(wp), dimension(3) :: p_infOV, p_infpT, p_infSL, sk, hk, gk, ek, rhok
         #:endif
         ! $:GPU_DECLARE(create='[p_infOV,p_infpT,p_infSL,sk,hk,gk,ek,rhok]')
 

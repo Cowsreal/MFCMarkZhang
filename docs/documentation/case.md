@@ -314,6 +314,7 @@ This is enabled by adding ``'elliptic_smoothing': "T",`` and ``'elliptic_smoothi
 | `m`                  | Real    | NACA airfoil parameters (see below) |
 | `p`                  | Real    | NACA airfoil parameters (see below) |
 | `slip`               | Logical | Apply a slip boundary |
+| `true_bcs`           | Logical | Uses true boundary conditions (see below) |
 | `model_filepath`     | String  | Path to an STL or OBJ file (not all OBJs are supported).     |
 | `model_scale(i)`     | Real    | Model's (applied) scaling factor for component $i$.          |
 | `model_rotate(i)`    | Real    | Model's (applied) angle of rotation about axis $i$.          |
@@ -344,6 +345,8 @@ Definitions for currently implemented immersed boundary patch types are listed i
 Additional details on this specification can be found in [The Naca Airfoil Series](https://web.stanford.edu/~cantwell/AA200_Course_Material/The%20NACA%20airfoil%20series.pdf)
 
 - `slip` applies a slip boundary to the surface of the patch if true and a no-slip boundary condition to the surface if false.
+
+- `true_bcs` toggles exact boundary conditions. By default, MFC uses a rougher approximation for the boundary condition, which has been empirically tested to improve simulation stability. In specific, when `true_bcs` is true, ghost cells are treated as points inside the solid and the wall being a mathematical surface between it and the corresponding image point. When false, the ghost points are treated as if they lie exactly on the wall itself.
 
 - Please see [Patch Parameters](#sec-patches) for the descriptions of `model_filepath`, `model_scale`, `model_rotate`, `model_translate`, `model_spc`, and `model_threshold`.
 
