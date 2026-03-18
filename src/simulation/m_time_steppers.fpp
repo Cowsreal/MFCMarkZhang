@@ -43,6 +43,8 @@ module m_time_steppers
     use m_body_forces
 
     use m_derived_variables
+
+    use ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     
     implicit none
 
@@ -728,6 +730,7 @@ contains
 
         real(wp) :: dt_local
         integer :: j, k, l !< Generic loop iterators
+        logical :: nan_dt
 
         if (.not. igr .or. dummy) then
             call s_convert_conservative_to_primitive_variables( &
@@ -737,7 +740,8 @@ contains
                 idwint)
         end if
 
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv]')
+        nan_dt = .false.
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv]', reduction='[[nan_dt]]', reductionOp='[OR]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -750,7 +754,7 @@ contains
                     ! Compute mixture sound speed
                     call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, 0._wp, c, qv)
 
-                    call s_compute_dt_from_cfl(vel, c, max_dt, rho, Re, j, k, l)
+                    call s_compute_dt_from_cfl(vel, c, max_dt, rho, Re, j, k, l, nan_dt)
                 end do
             end do
         end do
@@ -764,6 +768,11 @@ contains
             dt = dt_local
         else
             call s_mpi_allreduce_min(dt_local, dt)
+        end if
+
+        if (nan_dt .eqv. .true.) then
+            dt = ieee_value(dt, ieee_quiet_nan)
+            print *, "NAN"
         end if
 
         $:GPU_UPDATE(device='[dt]')

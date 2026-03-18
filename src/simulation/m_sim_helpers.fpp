@@ -244,7 +244,7 @@ contains
         !! @param j x coordinate
         !! @param k y coordinate
         !! @param l z coordinate
-    subroutine s_compute_dt_from_cfl(vel, c, max_dt, rho, Re_l, j, k, l)
+    subroutine s_compute_dt_from_cfl(vel, c, max_dt, rho, Re_l, j, k, l, nan_dt)
         $:GPU_ROUTINE(parallelism='[seq]')
         real(wp), dimension(num_vels), intent(in) :: vel
         real(wp), intent(in) :: c, rho
@@ -254,6 +254,8 @@ contains
 
         real(wp) :: icfl_dt, vcfl_dt
         real(wp) :: fltr_dtheta
+
+        logical, intent(inout) :: nan_dt
 
         ! Inviscid CFL calculation
         if (p > 0 .or. n > 0) then
@@ -283,6 +285,10 @@ contains
                 !1D
                 vcfl_dt = cfl_target*(dx(j)**2._wp)/maxval(1/(rho*Re_l))
             end if
+        end if
+
+        if (icfl_dt /= icfl_dt .or. vcfl_dt /= vcfl_dt) then
+            nan_dt = .true.
         end if
 
         if (any(Re_size > 0)) then
