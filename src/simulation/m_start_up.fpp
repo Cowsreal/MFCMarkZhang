@@ -865,7 +865,8 @@ contains
             end if
             if(igr) then
                 call s_smooth_ib_boundaries(bc_type, q_cons_ts(1)%vf)
-               ! call s_save_data(t_step, start1, finish1, io_time_avg, nt)
+                call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
+                call s_save_data(t_step, start1, finish1, io_time_avg, nt)
             end if
         end if
 

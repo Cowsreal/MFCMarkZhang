@@ -162,16 +162,9 @@ contains
         integer :: flag_3d, test
         integer :: count
 
-        !smooth_radius = 4
-        !
-        ! do i = 1, sys_size
-        !     $:GPU_UPDATE(device='[q_cons_vf(i)%sf]')
-        ! end do
-
         search_radius = patch_ib(1)%radius * (1._wp + patch_ib(1)%smooth + 0.05_wp)
         r_bound = patch_ib(1)%radius * patch_ib(1)%smooth
         count = 0
-        flag_3d = 1
         $:GPU_PARALLEL_LOOP(private='[j,k,l,gp]', copyin='[r_bound,search_radius]', copy='[count]', reduction='[[count]]',reductionOp='[+]', collapse=3)
         do l = 0, p
             do k = 0, n
@@ -186,6 +179,7 @@ contains
                         gp%z_periodicity = 0
                         call s_compute_levelset(gp)
                         if (gp%levelset < r_bound .and. gp%levelset >= 0._wp) then
+                            $:GPU_ATOMIC(atomic='update')
                             count = count + 1
                         end if
                     end if
@@ -199,7 +193,7 @@ contains
 
         num_smooth_points = count
         count = 0
-        $:GPU_PARALLEL_LOOP(private='[j,k,l,local_idx,gp]', copyin='[search_radius,r_bound,count,flag_3d]', collapse=3)
+        $:GPU_PARALLEL_LOOP(private='[j,k,l,local_idx,gp]', copyin='[search_radius,r_bound,count]', collapse=3)
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -225,184 +219,31 @@ contains
             end do
         end do
         $:END_GPU_PARALLEL_LOOP()
-        !smooth_radius = int(patch_ib(1)%smooth)
-        smooth_iters = 1
-        smooth_radius = 2
-        if (num_smooth_points > 0) then
-            z_size = 0
-            gaussian_norm = 0._wp
-            ! if(num_dims == 3) then
-            !     z_size = smooth_radius
-            ! end if
-            ! @:ALLOCATE(kernel(-smooth_radius:smooth_radius, &
-            !                 -smooth_radius:smooth_radius, &
-            !                 -z_size:z_size))
-            ! do l = -z_size, z_size
-            !     do k = -smooth_radius, smooth_radius
-            !         do j = -smooth_radius, smooth_radius
-            !             kernel(j, k, l) = exp(- (j ** 2 + k ** 2 + l ** 2) &
-            !                 / (2._wp * ((smooth_radius + 1) / 3._wp) ** 2))
-            !             gaussian_norm = gaussian_norm + kernel(j, k, l)
-            !         end do
-            !     end do
-            ! end do
-            !
-            ! do l = -z_size, z_size
-            !     do k = -smooth_radius, smooth_radius
-            !         do j = -smooth_radius, smooth_radius
-            !             kernel(j, k, l) = kernel(j, k, l) / gaussian_norm
-            !         end do
-            !     end do
-            ! end do
 
-            steep = patch_ib(1)%steep
-            shift = patch_ib(1)%shift
-
-            !call s_populate_variables_buffers(bc_type, q_cons_vf)
-            do z = 1, smooth_iters
-                $:GPU_PARALLEL_LOOP(private='[dynPresOld,dynPresNew,alpha,i,j,k,l,d,u,v,w,gp]', copy='[vel_smoothed]', &
-                    copyin='[r_bound,kernel,smooth_radius,z_size,num_smooth_points,flag_3d]', firstprivate='[steep,shift]')
-                do i = 1, num_smooth_points
-                    gp = domain_points(i)
-                    j = domain_points(i)%loc(1)
-                    k = domain_points(i)%loc(2)
-                    l = domain_points(i)%loc(3)
-                    alpha = domain_points(i)%levelset / r_bound
-                    alpha = 0.5_wp * (1.0_wp + tanh(steep * (alpha - shift)) / tanh(steep / 2._wp))
-                    dynPresOld = 0._wp
-                    dynPresNew = 0._wp
-                    do d = 1, num_dims
-                        dynPresOld = dynPresOld + q_cons_vf(momxb + d - 1)%sf(j, k, l) ** 2
-                        dynPresNew = dynPresNew + (alpha * q_cons_vf(momxb + d - 1)%sf(j, k, l)) ** 2
-                        q_cons_vf(momxb + d - 1)%sf(j, k, l) = alpha * q_cons_vf(momxb + d - 1)%sf(j, k, l)
-                        ! do w = -z_size, z_size
-                        !     do v = -smooth_radius, smooth_radius
-                        !         do u = -smooth_radius, smooth_radius
-                        !             vel_smoothed(i, d) = vel_smoothed(i, d) + kernel(u, v, w) * q_cons_vf(momxb + d - 1)%sf(j + u, k + v, l + w) / q_cons_vf(advxb)%sf(j + u, k + v, l + w)
-                        !         end do
-                        !     end do
-                        ! end do
-                    end do
-                    dynPresOld = dynPresOld / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
-                    dynPresNew = dynPresNew / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
-                    q_cons_vf(E_idx)%sf(j, k, l) = q_cons_vf(E_idx)%sf(j, k, l) - dynPresOld + dynPresNew
-
-                end do
-                $:END_GPU_PARALLEL_LOOP()
-
-                ! $:GPU_PARALLEL_LOOP(private='[dynPresOld,dynPresNew,i,j,k,l,d,gp,length,steep,r,alpha]', copyin='[gaussian_norm,vel_smoothed,num_smooth_points,flag_3d]')
-                ! do i = 1, num_smooth_points
-                !     ! gp = domain_points(i)
-                !     ! j = gp%loc(1)
-                !     ! k = gp%loc(2)
-                !     ! l = gp%loc(3)
-                !     j = 1
-                !     k = 1
-                !     l = 1
-                !     dynPresOld = 0._wp
-                !     dynPresNew = 0._wp
-                !     do d = 1, num_dims 
-                !         dynPresOld = dynPresOld + q_cons_vf(momxb + d - 1)%sf(j, k, l) ** 2
-                !         dynPresNew = dynPresNew + vel_smoothed(i, d) ** 2
-                !         q_cons_vf(momxb + d - 1)%sf(j, k, l) = vel_smoothed(i, d)
-                !         !q_cons_vf(momxb + d - 1)%sf(j, k, l) = alpha * q_cons_vf(momxb + d - 1)%sf(j, k, l)
-                !         !q_cons_vf(momxb + d - 1)%sf(j, k, l) = q_cons_temp(i, d) / gaussian_norm
-                !     end do
-                !     dynPresOld = dynPresOld / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
-                !     dynPresNew = dynPresNew / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
-                !     q_cons_vf(E_idx)%sf(j, k, l) = q_cons_vf(E_idx)%sf(j, k, l) - dynPresOld + dynPresNew
-                !
-                !     steep = 5.0_wp
-                !     length = 0.5_wp * patch_ib(1)%smooth
-                !     r = sqrt((x_cc(j) - 3.0_wp) ** 2 + y_cc(k) ** 2 + z_cc(l) ** 2)
-                !     if (r < 0.5_wp + length .and. r >= 0.5_wp) then
-                !         !alpha = (r - 0.5_wp) / length
-                !         !alpha = 0.5_wp * (1.0_wp - cos(alpha * pi))
-                !         !alpha = 0.5_wp * (1.0_wp + tanh(steep * (alpha - 0.5_wp)) / tanh(steep / 2._wp))
-                !         do d = 1, num_dims
-                !             q_cons_vf(momxb + d - 1)%sf(j, k, l) = alpha * q_cons_vf(momxb + d - 1)%sf(j, k, l)
-                !         end do
-                !         !q_cons_vf(momxb + 1)%sf(j, k, l) = (1 - alpha) * q_cons_vf(momxb + 1)%sf(j, k, l)
-                !         !q_cons_vf(momxb + 2)%sf(j, k, l) = (1 - alpha) * q_cons_vf(momxb + 1)%sf(j, k, l)
-                !     end if
-                ! end do
-                ! $:END_GPU_PARALLEL_LOOP()
-
+        steep = patch_ib(1)%steep
+        shift = patch_ib(1)%shift
+        call s_populate_variables_buffers(bc_type, q_cons_vf)
+        $:GPU_PARALLEL_LOOP(private='[dynPresOld,dynPresNew,alpha,i,j,k,l,d,gp]', copy='[vel_smoothed]', &
+            copyin='[r_bound,num_smooth_points]', firstprivate='[steep,shift]')
+        do i = 1, num_smooth_points
+            gp = domain_points(i)
+            j = domain_points(i)%loc(1)
+            k = domain_points(i)%loc(2)
+            l = domain_points(i)%loc(3)
+            alpha = domain_points(i)%levelset / r_bound
+            alpha = 0.5_wp * (1.0_wp + tanh(steep * (alpha - shift)) / tanh(steep / 2._wp))
+            dynPresOld = 0._wp
+            dynPresNew = 0._wp
+            do d = 1, num_dims
+                dynPresOld = dynPresOld + q_cons_vf(momxb + d - 1)%sf(j, k, l) ** 2
+                dynPresNew = dynPresNew + (alpha * q_cons_vf(momxb + d - 1)%sf(j, k, l)) ** 2
+                q_cons_vf(momxb + d - 1)%sf(j, k, l) = alpha * q_cons_vf(momxb + d - 1)%sf(j, k, l)
             end do
-        end if
-
-        ! call s_find_num_ghost_points(num_gps, num_inner_gps)
-        ! call s_find_ghost_points(ghost_points, inner_points)
-        ! call s_apply_levelset(ghost_points, num_gps)
-        ! call s_compute_image_points(ghost_points)
-        ! call s_compute_interpolation_coeffs(ghost_points)
-
-        ! $:GPU_PARALLEL_LOOP(private='[i,j,k,r,length,alpha,steep]', copyin='[patch_ib]', collapse=3)
-        ! do k = 0, p
-        !     do j = 0, n
-        !         do i = 0, m
-        !         steep = 5.0_wp
-        !         length = 0.5_wp * patch_ib(1)%smooth
-        !         r = sqrt((x_cc(i) - 3.0_wp) ** 2 + y_cc(j) ** 2 + z_cc(k) ** 2)
-        !             if (r < 0.5_wp + length .and. r >= 0.5_wp) then
-        !                 alpha = (r - 0.5_wp) / length
-        !                 !alpha = 0.5_wp * (1.0_wp - cos(alpha * pi))
-        !                 alpha = 0.5_wp * (1.0_wp + tanh(steep * (alpha - 0.5_wp)) / tanh(steep / 2._wp))
-        !                 q_cons_vf(momxb)%sf(i, j, k) = alpha * q_cons_vf(momxb)%sf(i, j, k)
-        !                 !q_cons_vf(momxb + 1)%sf(j, k, l) = (1 - alpha) * q_cons_vf(momxb + 1)%sf(j, k, l)
-        !                 !q_cons_vf(momxb + 2)%sf(j, k, l) = (1 - alpha) * q_cons_vf(momxb + 1)%sf(j, k, l)
-        !
-        !             end if
-        !         end do
-        !     end do
-        ! end do
-        ! $:END_GPU_PARALLEL_LOOP()
-        !
-        ! do i = 1, sys_size
-        !     $:GPU_UPDATE(host='[q_cons_vf(i)%sf]')
-        ! end do
-
-!         if (ghost_points > 0) then
-!             $:GPU_PARALLEL_LOOP(private='[i,j,k,l,dx_avg,dy_avg,dz_avg,dr,alpha,r,innerp]', copyin='[patch_id,patch_ib,dx,dy,dz]')
-!             do i = 1, num_gps
-!                 gp = ghost_points(i)
-!                 j = gp%loc(1)
-!                 k = gp%loc(2)
-!                 l = gp%loc(3)
-!                 ! r = gp%ip_loc(1)
-!                 ! s = gp%ip_loc(2)
-!                 ! t = gp%ip_loc(3)
-!
-!                 dx_avg = (dx(j - 1) + dx(j) + dx(j + 1)) / 3
-!                 dy_avg = (dy(k - 1) + dy(k) + dy(k + 1)) / 3
-!                 if (p == 0) then
-!                     !dr = (3 + patch_ib(patch_id)%smoothing_radius) * max(dx_avg, dy_avg)
-!                 else
-!                     dz_avg = (dz(l - 1) + dz(l) + dz(l + 1)) / 3
-! !                        dr = (3 + patch_ib(patch_id)%smoothing_radius) * max(dz, max(dx, dy))
-!                 end if
-!
-!                 if(r > dr) then
-!                     ! Do nothing if outside range
-!                 else
-!                     ! Normalize the radial value to within [0, 1]
-!                     alpha = r / dr
-!
-!                     ! Alpha is then mapped to cosine
-!                     alpha = 0.5_wp * (1.0_wp - cos(alpha * pi))
-!
-!                     print *, "HI"
-!                     ! Assume the current cell's velocity value is locally a good enough indication of the velocity values outside dr region
-!                     q_cons_vf(momxb)%sf(j, k, l) = (1 - alpha) * q_cons_vf(momxb)%sf(j, k, l)
-!                     q_cons_vf(momxb + 1)%sf(j, k, l) = (1 - alpha) * q_cons_vf(momxb + 1)%sf(j, k, l)
-!                     q_cons_vf(E_idx)%sf(j, k, l) = (1 - alpha) * q_cons_vf(E_idx)%sf(j, k, l)
-!                     q_cons_vf(contxb)%sf(j, k, l) = (1 - alpha) * q_cons_vf(contxb)%sf(j, k, l)
-!                     q_cons_vf(momxb)%sf(j, k, l) = 500.0_wp
-!                     !q_prim_vf(momxb + 2)%sf(j, k, l) = alpha * q_prim_vf(momxb + 2)%sf(j, k, l)
-!                 end if
-!             end do
-!             $:END_GPU_PARALLEL_LOOP()
-!         end if
+            dynPresOld = dynPresOld / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
+            dynPresNew = dynPresNew / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
+            q_cons_vf(E_idx)%sf(j, k, l) = q_cons_vf(E_idx)%sf(j, k, l) - dynPresOld + dynPresNew
+        end do
+        $:END_GPU_PARALLEL_LOOP()
 
     @:DEALLOCATE(domain_points)
     end subroutine s_smooth_ib_boundaries
