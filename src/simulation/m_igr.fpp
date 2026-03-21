@@ -296,72 +296,8 @@ contains
             num_iters = num_igr_iters
         end if
 
-        ! do q = 1, num_iters
-        !     $:GPU_PARALLEL_LOOP(collapse=3, private='[j,k,l,rho_lx,rho_rx,rho_ly,rho_ry,rho_lz,rho_rz,cx_L,cx_R,cy_L,cy_R,cz_L,cz_R,update,update,fd_coeff]')
-        !     do l = 0, p
-        !         do k = 0, n
-        !             do j = 0, m
-        !                 rho_lx = 0._wp
-        !                 rho_rx = 0._wp
-        !                 rho_ly = 0._wp
-        !                 rho_ry = 0._wp
-        !                 rho_lz = 0._wp
-        !                 rho_rz = 0._wp
-        !                 fd_coeff = 0._wp
-        !
-        !                 $:GPU_LOOP(parallelism='[seq]')
-        !                 do i = 1, num_fluids
-        !                     rho_lx = rho_lx + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j - 1, k, l), kind=wp)/2._wp
-        !                     rho_rx = rho_rx + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j + 1, k, l), kind=wp)/2._wp
-        !                     rho_ly = rho_ly + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k - 1, l), kind=wp)/2._wp
-        !                     rho_ry = rho_ry + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k + 1, l), kind=wp)/2._wp
-        !                     if (num_dims == 3) then
-        !                         rho_lz = rho_lz + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k, l - 1), kind=wp)/2._wp
-        !                         rho_rz = rho_rz + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k, l + 1), kind=wp)/2._wp
-        !                     end if
-        !                     fd_coeff = fd_coeff + q_cons_vf(i)%sf(j, k, l)
-        !                 end do
-        !
-        !                 cx_L = 2._wp / (dx(j) * (dx(j - 1) + dx(j)))
-        !                 cx_R = 2._wp / (dx(j) * (dx(j) + dx(j + 1)))
-        !                 cy_L = 2._wp / (dy(k) * (dy(k - 1) + dy(k)))
-        !                 cy_R = 2._wp / (dy(k) * (dy(k) + dy(k + 1)))
-        !                 cz_L = 0._wp
-        !                 cz_R = 0._wp
-        !
-        !                 fd_coeff = 1._wp/fd_coeff + alf_igr* &
-        !                             (cx_L/rho_lx + cx_R/rho_rx + cy_L/rho_ly + cy_R/rho_ry)
-        !                 if (num_dims == 3) then
-        !                     cz_L = 2._wp / (dz(l) * (dz(l - 1) + dz(l)))
-        !                     cz_R = 2._wp / (dz(l) * (dz(l) + dz(l + 1)))
-        !                     fd_coeff = fd_coeff + alf_igr*(cz_L/rho_lz + cz_R/rho_rz)
-        !                 end if
-        !
-        !                 if (igr_iter_solver == 1) then
-        !                     update = cx_L * jac_old(j - 1, k, l) / rho_lx + cx_R * jac_old(j + 1, k, l) / rho_rx + &
-        !                             cy_L * jac_old(j, k - 1, l) / rho_ly + cy_R * jac_old(j, k + 1, l) / rho_ry
-        !                 else
-        !                     update = cx_L * jac(j - 1, k, l) / rho_lx + cx_R * jac(j + 1, k, l) / rho_rx + &
-        !                             cy_L * jac(j, k - 1, l) / rho_ly + cy_R * jac(j, k + 1, l) / rho_ry
-        !                 end if
-        !                 if (num_dims == 3) then
-        !                     if (igr_iter_solver == 1) then
-        !                         update = update + cz_L * jac_old(j, k, l - 1) / rho_lz + cz_R * jac_old(j, k, l + 1) / rho_rz
-        !                     else
-        !                         update = update + cz_L * jac(j, k, l - 1) / rho_lz + cz_R * jac(j, k, l + 1) / rho_rz
-        !                     end if
-        !                 end if
-        !                 jac(j, k, l) = real((alf_igr / fd_coeff) * update + &
-        !                                     real(jac_rhs(j, k, l), kind=wp) / fd_coeff, kind=stp)
-        !             end do
-        !         end do
-        !     end do
-        !     $:END_GPU_PARALLEL_LOOP()
-        !
-        !
-
         do q = 1, num_iters
-            $:GPU_PARALLEL_LOOP(collapse=3, private='[j,k,l,rho_lx, rho_rx, rho_ly, rho_ry, rho_lz, rho_rz, fd_coeff]')
+            $:GPU_PARALLEL_LOOP(collapse=3, private='[j,k,l,rho_lx,rho_rx,rho_ly,rho_ry,rho_lz,rho_rz,cx_L,cx_R,cy_L,cy_R,cz_L,cz_R,update,update,fd_coeff]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -379,52 +315,116 @@ contains
                             rho_rx = rho_rx + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j + 1, k, l), kind=wp)/2._wp
                             rho_ly = rho_ly + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k - 1, l), kind=wp)/2._wp
                             rho_ry = rho_ry + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k + 1, l), kind=wp)/2._wp
-                            if (p > 0) then
+                            if (num_dims == 3) then
                                 rho_lz = rho_lz + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k, l - 1), kind=wp)/2._wp
                                 rho_rz = rho_rz + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k, l + 1), kind=wp)/2._wp
                             end if
                             fd_coeff = fd_coeff + q_cons_vf(i)%sf(j, k, l)
                         end do
 
+                        cx_L = 2._wp / (dx(j) * (dx(j - 1) + dx(j)))
+                        cx_R = 2._wp / (dx(j) * (dx(j) + dx(j + 1)))
+                        cy_L = 2._wp / (dy(k) * (dy(k - 1) + dy(k)))
+                        cy_R = 2._wp / (dy(k) * (dy(k) + dy(k + 1)))
+                        cz_L = 0._wp
+                        cz_R = 0._wp
+
                         fd_coeff = 1._wp/fd_coeff + alf_igr* &
-                                   ((1._wp/dx(j)**2._wp)*(1._wp/rho_lx + 1._wp/rho_rx) + &
-                                    (1._wp/dy(k)**2._wp)*(1._wp/rho_ly + 1._wp/rho_ry))
-
+                                    (cx_L/rho_lx + cx_R/rho_rx + cy_L/rho_ly + cy_R/rho_ry)
                         if (num_dims == 3) then
-                            fd_coeff = fd_coeff + alf_igr*(1._wp/dz(l)**2._wp)*(1._wp/rho_lz + 1._wp/rho_rz)
+                            cz_L = 2._wp / (dz(l) * (dz(l - 1) + dz(l)))
+                            cz_R = 2._wp / (dz(l) * (dz(l) + dz(l + 1)))
+                            fd_coeff = fd_coeff + alf_igr*(cz_L/rho_lz + cz_R/rho_rz)
                         end if
 
-                        if (igr_iter_solver == 1) then ! Jacobi iteration
-                            if (num_dims == 3) then
-                                jac(j, k, l) = real((alf_igr/fd_coeff)* &
-                                                    ((1._wp/dx(j)**2._wp)*(jac_old(j - 1, k, l)/rho_lx + jac_old(j + 1, k, l)/rho_rx) + &
-                                                     (1._wp/dy(k)**2._wp)*(jac_old(j, k - 1, l)/rho_ly + jac_old(j, k + 1, l)/rho_ry) + &
-                                                     (1._wp/dz(l)**2._wp)*(jac_old(j, k, l - 1)/rho_lz + jac_old(j, k, l + 1)/rho_rz)) + &
-                                                    real(jac_rhs(j, k, l), kind=wp)/fd_coeff, kind=stp)
+                        if (igr_iter_solver == 1) then
+                            update = cx_L * jac_old(j - 1, k, l) / rho_lx + cx_R * jac_old(j + 1, k, l) / rho_rx + &
+                                    cy_L * jac_old(j, k - 1, l) / rho_ly + cy_R * jac_old(j, k + 1, l) / rho_ry
+                        else
+                            update = cx_L * jac(j - 1, k, l) / rho_lx + cx_R * jac(j + 1, k, l) / rho_rx + &
+                                    cy_L * jac(j, k - 1, l) / rho_ly + cy_R * jac(j, k + 1, l) / rho_ry
+                        end if
+                        if (num_dims == 3) then
+                            if (igr_iter_solver == 1) then
+                                update = update + cz_L * jac_old(j, k, l - 1) / rho_lz + cz_R * jac_old(j, k, l + 1) / rho_rz
                             else
-                                jac(j, k, l) = real((alf_igr/fd_coeff)* &
-                                                    ((1._wp/dx(j)**2._wp)*(real(jac_old(j - 1, k, l), kind=wp)/rho_lx + real(jac_old(j + 1, k, l), kind=wp)/rho_rx) + &
-                                                     (1._wp/dy(k)**2._wp)*(real(jac_old(j, k - 1, l), kind=wp)/rho_ly + real(jac_old(j, k + 1, l), kind=wp)/rho_ry)) + &
-                                                    real(jac_rhs(j, k, l), kind=wp)/fd_coeff, kind=stp)
-                            end if
-                        else ! Gauss Seidel iteration
-                            if (num_dims == 3) then
-                                jac(j, k, l) = real((alf_igr/fd_coeff)* &
-                                                    ((1._wp/dx(j)**2._wp)*(jac(j - 1, k, l)/rho_lx + jac(j + 1, k, l)/rho_rx) + &
-                                                     (1._wp/dy(k)**2._wp)*(jac(j, k - 1, l)/rho_ly + jac(j, k + 1, l)/rho_ry) + &
-                                                     (1._wp/dz(l)**2._wp)*(jac(j, k, l - 1)/rho_lz + jac(j, k, l + 1)/rho_rz)) + &
-                                                    real(jac_rhs(j, k, l), kind=wp)/fd_coeff, kind=stp)
-                            else
-                                jac(j, k, l) = real((alf_igr/fd_coeff)* &
-                                                    ((1._wp/dx(j)**2._wp)*(jac(j - 1, k, l)/rho_lx + jac(j + 1, k, l)/rho_rx) + &
-                                                     (1._wp/dy(k)**2._wp)*(jac(j, k - 1, l)/rho_ly + jac(j, k + 1, l)/rho_ry)) + &
-                                                    real(jac_rhs(j, k, l), kind=wp)/fd_coeff, kind=stp)
+                                update = update + cz_L * jac(j, k, l - 1) / rho_lz + cz_R * jac(j, k, l + 1) / rho_rz
                             end if
                         end if
+                        jac(j, k, l) = real((alf_igr / fd_coeff) * update + &
+                                            real(jac_rhs(j, k, l), kind=wp) / fd_coeff, kind=stp)
                     end do
                 end do
             end do
             $:END_GPU_PARALLEL_LOOP()
+
+
+
+        ! do q = 1, num_iters
+        !     $:GPU_PARALLEL_LOOP(collapse=3, private='[j,k,l,rho_lx, rho_rx, rho_ly, rho_ry, rho_lz, rho_rz, fd_coeff]')
+        !     do l = 0, p
+        !         do k = 0, n
+        !             do j = 0, m
+        !                 rho_lx = 0._wp
+        !                 rho_rx = 0._wp
+        !                 rho_ly = 0._wp
+        !                 rho_ry = 0._wp
+        !                 rho_lz = 0._wp
+        !                 rho_rz = 0._wp
+        !                 fd_coeff = 0._wp
+        !
+        !                 $:GPU_LOOP(parallelism='[seq]')
+        !                 do i = 1, num_fluids
+        !                     rho_lx = rho_lx + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j - 1, k, l), kind=wp)/2._wp
+        !                     rho_rx = rho_rx + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j + 1, k, l), kind=wp)/2._wp
+        !                     rho_ly = rho_ly + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k - 1, l), kind=wp)/2._wp
+        !                     rho_ry = rho_ry + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k + 1, l), kind=wp)/2._wp
+        !                     if (p > 0) then
+        !                         rho_lz = rho_lz + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k, l - 1), kind=wp)/2._wp
+        !                         rho_rz = rho_rz + real(q_cons_vf(i)%sf(j, k, l) + q_cons_vf(i)%sf(j, k, l + 1), kind=wp)/2._wp
+        !                     end if
+        !                     fd_coeff = fd_coeff + q_cons_vf(i)%sf(j, k, l)
+        !                 end do
+        !
+        !                 fd_coeff = 1._wp/fd_coeff + alf_igr* &
+        !                            ((1._wp/dx(j)**2._wp)*(1._wp/rho_lx + 1._wp/rho_rx) + &
+        !                             (1._wp/dy(k)**2._wp)*(1._wp/rho_ly + 1._wp/rho_ry))
+        !
+        !                 if (num_dims == 3) then
+        !                     fd_coeff = fd_coeff + alf_igr*(1._wp/dz(l)**2._wp)*(1._wp/rho_lz + 1._wp/rho_rz)
+        !                 end if
+        !
+        !                 if (igr_iter_solver == 1) then ! Jacobi iteration
+        !                     if (num_dims == 3) then
+        !                         jac(j, k, l) = real((alf_igr/fd_coeff)* &
+        !                                             ((1._wp/dx(j)**2._wp)*(jac_old(j - 1, k, l)/rho_lx + jac_old(j + 1, k, l)/rho_rx) + &
+        !                                              (1._wp/dy(k)**2._wp)*(jac_old(j, k - 1, l)/rho_ly + jac_old(j, k + 1, l)/rho_ry) + &
+        !                                              (1._wp/dz(l)**2._wp)*(jac_old(j, k, l - 1)/rho_lz + jac_old(j, k, l + 1)/rho_rz)) + &
+        !                                             real(jac_rhs(j, k, l), kind=wp)/fd_coeff, kind=stp)
+        !                     else
+        !                         jac(j, k, l) = real((alf_igr/fd_coeff)* &
+        !                                             ((1._wp/dx(j)**2._wp)*(real(jac_old(j - 1, k, l), kind=wp)/rho_lx + real(jac_old(j + 1, k, l), kind=wp)/rho_rx) + &
+        !                                              (1._wp/dy(k)**2._wp)*(real(jac_old(j, k - 1, l), kind=wp)/rho_ly + real(jac_old(j, k + 1, l), kind=wp)/rho_ry)) + &
+        !                                             real(jac_rhs(j, k, l), kind=wp)/fd_coeff, kind=stp)
+        !                     end if
+        !                 else ! Gauss Seidel iteration
+        !                     if (num_dims == 3) then
+        !                         jac(j, k, l) = real((alf_igr/fd_coeff)* &
+        !                                             ((1._wp/dx(j)**2._wp)*(jac(j - 1, k, l)/rho_lx + jac(j + 1, k, l)/rho_rx) + &
+        !                                              (1._wp/dy(k)**2._wp)*(jac(j, k - 1, l)/rho_ly + jac(j, k + 1, l)/rho_ry) + &
+        !                                              (1._wp/dz(l)**2._wp)*(jac(j, k, l - 1)/rho_lz + jac(j, k, l + 1)/rho_rz)) + &
+        !                                             real(jac_rhs(j, k, l), kind=wp)/fd_coeff, kind=stp)
+        !                     else
+        !                         jac(j, k, l) = real((alf_igr/fd_coeff)* &
+        !                                             ((1._wp/dx(j)**2._wp)*(jac(j - 1, k, l)/rho_lx + jac(j + 1, k, l)/rho_rx) + &
+        !                                              (1._wp/dy(k)**2._wp)*(jac(j, k - 1, l)/rho_ly + jac(j, k + 1, l)/rho_ry)) + &
+        !                                             real(jac_rhs(j, k, l), kind=wp)/fd_coeff, kind=stp)
+        !                     end if
+        !                 end if
+        !             end do
+        !         end do
+        !     end do
+        !     $:END_GPU_PARALLEL_LOOP()
 
 
             call s_populate_F_igr_buffers(bc_type, jac_sf)
@@ -451,7 +451,7 @@ contains
 
     end subroutine s_igr_iterative_solve
 
-    !> @brief Computes the IGR viscous stress contribution in the x-direction and accumulates it into the RHS.
+
     subroutine s_igr_sigma_x(q_cons_vf, rhs_vf)
 #ifdef _CRAYFTN
         !DIR$ OPTIMIZE (-haggress)
@@ -537,7 +537,6 @@ contains
 
     end subroutine s_igr_sigma_x
 
-    !> @brief Evaluates the approximate Riemann solver for the IGR scheme along a given coordinate direction.
     subroutine s_igr_riemann_solver(q_cons_vf, rhs_vf, idir)
 #ifdef _CRAYFTN
         !DIR$ OPTIMIZE (-haggress)
@@ -2871,7 +2870,6 @@ contains
 
     end subroutine s_igr_riemann_solver
 
-    !> @brief Computes pressure and maximum wavespeed from left and right reconstructed states for the IGR Riemann solver.
     subroutine s_get_derived_states(E_L, gamma_L, pi_inf_L, rho_L, vel_L, &
                                     E_R, gamma_R, pi_inf_R, rho_R, vel_R, &
                                     pres_L, pres_R, cfl)
@@ -2920,7 +2918,6 @@ contains
 
     end subroutine s_get_derived_states
 
-    !> @brief Accumulates the IGR numerical flux divergence into the right-hand side along the specified coordinate direction.
     subroutine s_igr_flux_add(q_cons_vf, rhs_vf, flux_vf, idir)
 
         type(scalar_field), &
@@ -2977,7 +2974,6 @@ contains
 
     end subroutine s_igr_flux_add
 
-    !> @brief Deallocates all arrays and GPU resources allocated by the IGR module.
     subroutine s_finalize_igr_module()
 
         if (viscous) then

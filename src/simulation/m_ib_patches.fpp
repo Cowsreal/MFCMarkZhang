@@ -116,6 +116,8 @@ contains
                             call s_ib_ellipse(i, ib_markers, xp, yp)
                         elseif (patch_ib(i)%geometry == 7) then
                             call s_ib_circular_shell(i, ib_markers)
+                        else if(patch_ib(i)%geometry == 14) then
+                            call s_ib_star(i, ib_markers)
                         end if
                     end do
                 end do
@@ -125,6 +127,45 @@ contains
         end if
 
     end subroutine s_apply_ib_patches
+
+
+    subroutine s_ib_star(patch_id, ib_markers)
+        integer, intent(in) :: patch_id
+        !integer, intent(in) :: xp, yp !< integers containing the periodicity projection information
+        type(integer_field), intent(inout) :: ib_markers
+
+        real(wp), dimension(1:2) :: center
+        real(wp) :: x_0, y_0
+        real(wp) :: radius, amplitude, frequency, r, theta ! add sign
+        integer :: i, j, il, ir, jl, jr !< Generic loop iterators
+
+        ! Transferring the circular patch's radius, centroid, smearing patch
+        ! identity and smearing coefficient information
+        center(1) = patch_ib(patch_id)%x_centroid
+        center(2) = patch_ib(patch_id)%y_centroid
+        radius = patch_ib(patch_id)%radius
+
+        !amplitude = patch_ib(patch_id)%amplitude
+
+        amplitude = 2.0_wp * radius / 10.0_wp
+        frequency = 5.0_wp
+
+        $:GPU_PARALLEL_LOOP(private='[i,j,x_0,y_0,r,theta]',&
+                  & copyin='[patch_id,center,radius,amplitude,frequency]', collapse=2)
+        do j = -gp_layers, n + gp_layers
+            do i = -gp_layers, m + gp_layers
+                x_0 = x_cc(i) - center(1)
+                y_0 = y_cc(j) - center(2)
+                r = sqrt(x_0 ** 2 + y_0 ** 2)
+                theta = atan2(y_0, x_0)
+                if (r < radius + amplitude * cos(frequency * theta)) then
+                    ib_markers%sf(i, j, 0) = patch_id
+                end if
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_ib_star
 
     !> The circular patch is a 2D geometry that may be used, for
         !!              example, in creating a bubble or a droplet. The geometry

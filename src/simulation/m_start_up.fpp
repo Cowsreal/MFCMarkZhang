@@ -851,7 +851,12 @@ contains
 
         mytime = mytime + dt
 
-        if(t_step == 0 .and. ib) then
+        if (t_step == 0 .and. ib) then
+            if(igr) then
+                call s_smooth_ib_boundaries(bc_type, q_cons_ts(1)%vf)
+                call s_save_data(t_step, start1, finish1, io_time_avg, nt)
+            end if
+            !call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
             if(igr) then
                 call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
             else
@@ -860,12 +865,6 @@ contains
             call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
             if(igr) then
                 call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
-            else
-                call s_populate_variables_buffers(bc_type, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
-            end if
-            if(igr) then
-                call s_smooth_ib_boundaries(bc_type, q_cons_ts(1)%vf)
-                call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
                 call s_save_data(t_step, start1, finish1, io_time_avg, nt)
             end if
         end if
@@ -1044,7 +1043,7 @@ contains
                 do k = 0, n
                     do j = 0, m
                         if (ieee_is_nan(real(q_cons_ts(stor)%vf(i)%sf(j, k, l), kind=wp))) then
-                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p, x_cc(j), y_cc(k), z_cc(l)
+                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
 
                             call s_mpi_abort("NaN(s) in timestep output.")
                         end if

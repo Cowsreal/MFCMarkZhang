@@ -730,7 +730,7 @@ contains
 
         real(wp) :: dt_local
         integer :: j, k, l !< Generic loop iterators
-        logical :: nan_dt
+        integer :: nan_dt
 
         if (.not. igr .or. dummy) then
             call s_convert_conservative_to_primitive_variables( &
@@ -740,8 +740,8 @@ contains
                 idwint)
         end if
 
-        nan_dt = .false.
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv]', reduction='[[nan_dt]]', reductionOp='[OR]')
+        nan_dt = 0
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv]', reduction='[[nan_dt]]', reductionOp='[MAX]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -770,7 +770,7 @@ contains
             call s_mpi_allreduce_min(dt_local, dt)
         end if
 
-        if (nan_dt .eqv. .true.) then
+        if (nan_dt == 1) then
             dt = ieee_value(dt, ieee_quiet_nan)
             print *, "NAN"
         end if

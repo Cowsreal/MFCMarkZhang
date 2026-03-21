@@ -151,18 +151,14 @@ contains
 
     subroutine s_smooth_ib_boundaries(bc_type, q_cons_vf)
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_cons_vf
-        integer :: i, j, k, l, smooth_radius, z_size, smooth_iters, z, d, u, v, w, num_smooth_points, local_idx,idx
-        real(wp) :: r, length,alpha,steep,gaussian_norm,shift
-        real(wp), dimension(:, :), allocatable :: vel_smoothed 
-        real(wp), dimension(:, :, :), allocatable :: kernel
-        real(wp) :: dx, dy, dz
+        integer :: i, j, k, l, smooth_radius,d,num_smooth_points, local_idx
+        real(wp) :: r,alpha,steep,shift
         real(wp) :: r_bound, search_radius, dynPresOld, dynPresNew
         type(ghost_point) :: gp
         type(integer_field), dimension(1:num_dims, 1:2), intent(in) :: bc_type
-        integer :: flag_3d, test
         integer :: count
 
-        search_radius = patch_ib(1)%radius * (1._wp + patch_ib(1)%smooth + 0.05_wp)
+        search_radius = patch_ib(1)%radius * (1._wp + patch_ib(1)%smooth + 0.5_wp)
         r_bound = patch_ib(1)%radius * patch_ib(1)%smooth
         count = 0
         $:GPU_PARALLEL_LOOP(private='[j,k,l,gp]', copyin='[r_bound,search_radius]', copy='[count]', reduction='[[count]]',reductionOp='[+]', collapse=3)
@@ -179,7 +175,6 @@ contains
                         gp%z_periodicity = 0
                         call s_compute_levelset(gp)
                         if (gp%levelset < r_bound .and. gp%levelset >= 0._wp) then
-                            $:GPU_ATOMIC(atomic='update')
                             count = count + 1
                         end if
                     end if
@@ -223,7 +218,7 @@ contains
         steep = patch_ib(1)%steep
         shift = patch_ib(1)%shift
         call s_populate_variables_buffers(bc_type, q_cons_vf)
-        $:GPU_PARALLEL_LOOP(private='[dynPresOld,dynPresNew,alpha,i,j,k,l,d,gp]', copy='[vel_smoothed]', &
+        $:GPU_PARALLEL_LOOP(private='[dynPresOld,dynPresNew,alpha,i,j,k,l,d,gp]', &
             copyin='[r_bound,num_smooth_points]', firstprivate='[steep,shift]')
         do i = 1, num_smooth_points
             gp = domain_points(i)
@@ -242,8 +237,16 @@ contains
             dynPresOld = dynPresOld / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
             dynPresNew = dynPresNew / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
             q_cons_vf(E_idx)%sf(j, k, l) = q_cons_vf(E_idx)%sf(j, k, l) - dynPresOld + dynPresNew
+            !q_cons_vf(E_idx)%sf(j, k, l) = domain_points(i)%levelset
         end do
         $:END_GPU_PARALLEL_LOOP()
+        ! do i = 1, num_gps
+        !     gp = ghost_points(i)
+        !     j = gp%loc(1)
+        !     k = gp%loc(2)
+        !     l = gp%loc(3)
+        !     q_cons_vf(E_idx)%sf(j, k, l) = gp%levelset
+        ! end do
 
     @:DEALLOCATE(domain_points)
     end subroutine s_smooth_ib_boundaries
@@ -940,7 +943,6 @@ contains
                 if (ib_markers%sf(i + 1, j, k) /= 0) alpha(2, 1, 1) = 0._wp
                 if (ib_markers%sf(i, j + 1, k) /= 0) alpha(1, 2, 1) = 0._wp
                 if (ib_markers%sf(i + 1, j + 1, k) /= 0) alpha(2, 2, 1) = 0._wp
-
                 if (p == 0) then
                     eta(:, :, 1) = 1._wp/dist(:, :, 1)**2
                     buf = sum(alpha(:, :, 1)*eta(:, :, 1))

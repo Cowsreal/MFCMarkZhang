@@ -72,6 +72,9 @@ contains
                     call s_check_model_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 6) then
                     call s_check_ellipse_ib_patch_geometry(i)
+else if (patch_ib(i)%geometry == 14) then
+                    call s_check_circle_ib_patch_geometry(i)
+
                 else
                     call s_prohibit_abort("Invalid IB patch", &
                                           "patch_ib("//trim(iStr)//")%geometry must be "// &

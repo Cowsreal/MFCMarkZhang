@@ -66,6 +66,8 @@ contains
             call s_ellipse_levelset(gp)
         case (IB_CIRCULAR_SHELL)
             call s_circular_shell_levelset(gp)
+        case (14)
+            call s_star_levelset(gp)
 
         !  3D Patch Geometries
         case (IB_SPHERE)
@@ -83,6 +85,88 @@ contains
         end select
 
     end subroutine s_compute_levelset
+
+    subroutine s_star_levelset(gp)
+        $:GPU_ROUTINE(parallelism='[seq]')
+
+        type(ghost_point), intent(inout) :: gp
+        real(wp) :: radius, amplitude, frequency, dtheta, theta, r, r_curve
+        integer :: k, Np
+        real(wp) :: dist, global_dist_sq, loc_dist_sq
+        integer :: global_id
+        real(wp), dimension(3) :: dist_vec
+
+        real(wp), dimension(1:3) :: xy_local, offset !< x and y coordinates in local IB frame
+        real(wp), dimension(1:2) :: center
+        real(wp), dimension(1:3, 1:3) :: rotation, inverse_rotation
+        real(wp), dimension(400, 2) :: star_grid
+
+        integer :: i, j, ib_patch_id !< Loop index variables
+
+        ib_patch_id = gp%ib_patch_id
+        i = gp%loc(1)
+        j = gp%loc(2)
+
+        center(1) = patch_ib(ib_patch_id)%x_centroid
+        center(2) = patch_ib(ib_patch_id)%y_centroid
+        radius = patch_ib(ib_patch_id)%radius
+
+        xy_local = [x_cc(i) - center(1), y_cc(j) - center(2), 0._wp] ! get coordinate frame centered on IB
+        global_dist_sq = huge(global_dist_sq) 
+        global_id = 1
+
+        Np = 400
+        !amplitude = patch_ib(ib_patch_id)%amplitude
+        amplitude = 2.0_wp * radius / 10.0_wp
+        frequency = 5.0_wp
+        dtheta = 2.0_wp * pi / real(Np, kind=wp)
+
+        ! generate the points
+        do k = 1, Np
+            theta = real(k - 1, kind=wp) * dtheta
+            r = radius + amplitude * cos(frequency * theta)
+            star_grid(k, 1) = r * cos(theta)
+            star_grid(k, 2) = r * sin(theta)
+        end do
+
+        do k = 1, Np
+            dist_vec(1) = xy_local(1) - star_grid(k, 1)
+            dist_vec(2) = xy_local(2) - star_grid(k, 2)
+            
+            loc_dist_sq = dist_vec(1) ** 2 + dist_vec(2) ** 2
+            
+            if (loc_dist_sq < global_dist_sq) then
+                global_dist_sq = loc_dist_sq
+                global_id = k
+            end if
+        end do
+
+        dist = sqrt(global_dist_sq)
+        r = sqrt(xy_local(1) ** 2 + xy_local(2) ** 2)
+        theta = atan2(xy_local(2), xy_local(1))
+
+        if (theta < 0.0_wp) then
+            theta = theta + 2.0_wp * pi
+        end if
+        
+        r_curve = radius + amplitude * cos(frequency * theta)
+
+        if (r < r_curve) then
+            dist = -dist
+        end if
+
+        gp%levelset = dist
+        
+        if (f_approx_equal(abs(dist), 0._wp)) then
+            gp%levelset_norm = 0._wp
+        else
+            dist_vec(1) = xy_local(1) - star_grid(global_id, 1)
+            dist_vec(2) = xy_local(2) - star_grid(global_id, 2)
+            dist_vec(3) = 0._wp
+            
+            gp%levelset_norm = dist_vec(:) / dist
+        end if
+    end subroutine s_star_levelset
 
     !> @brief Computes the signed distance and outward normal from a ghost point to a circular immersed boundary.
     subroutine s_circle_levelset(gp)

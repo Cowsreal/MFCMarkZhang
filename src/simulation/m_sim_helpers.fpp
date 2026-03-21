@@ -164,6 +164,9 @@ contains
         end if
 
         H = (E + pres)/rho
+        ! if (abs(x_cc(j) - 0.97626_wp) < 0.01_wp .and. (abs(y_cc(k) - 0.02248_wp) < 0.01_wp)) then
+        !     print *, H
+        ! end if
 
     end subroutine s_compute_enthalpy
 
@@ -255,7 +258,7 @@ contains
         real(wp) :: icfl_dt, vcfl_dt
         real(wp) :: fltr_dtheta
 
-        logical, intent(inout) :: nan_dt
+        integer, intent(inout) :: nan_dt
 
         ! Inviscid CFL calculation
         if (p > 0 .or. n > 0) then
@@ -264,6 +267,9 @@ contains
         else
             ! 1D case
             icfl_dt = cfl_target*(dx(j)/(abs(vel(1)) + c))
+        end if
+        if (icfl_dt /= icfl_dt) then
+            print *, "NAN"
         end if
 
         ! Viscous calculations
@@ -288,7 +294,7 @@ contains
         end if
 
         if (icfl_dt /= icfl_dt .or. vcfl_dt /= vcfl_dt) then
-            nan_dt = .true.
+            nan_dt = 1
         end if
 
         if (any(Re_size > 0)) then
