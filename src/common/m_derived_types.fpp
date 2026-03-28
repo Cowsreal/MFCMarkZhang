@@ -453,6 +453,7 @@ module m_derived_types
     !> Ghost Point for Immersed Boundaries
     type ghost_point
         integer, dimension(3) :: loc !< Physical location of the ghost point
+        real(wp), dimension(3) :: bound_loc !< Physical location of the boundary closest to the ghost point
         real(wp), dimension(3) :: ip_loc !< Physical location of the image point
         integer, dimension(3) :: ip_grid !< Top left grid point of IP
         real(wp), dimension(2, 2, 2) :: interp_coeffs !< Interpolation Coefficients of image point
@@ -462,6 +463,11 @@ module m_derived_types
         logical :: slip
         integer, dimension(3) :: DB
         integer :: x_periodicity, y_periodicity, z_periodicity
+
+        integer, dimension(200, 3) :: stencil
+        real(wp), dimension(4, 200) :: A
+        integer :: M
+        real(wp) :: cond
     end type ghost_point
 
     !> Species parameters

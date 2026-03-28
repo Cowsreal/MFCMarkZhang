@@ -88,6 +88,8 @@ contains
 
         integer :: i, j, k
         integer :: max_num_gps, max_num_inner_gps
+        logical :: testing
+        testing = .true.
 
         call nvtxStartRange("SETUP-IBM-MODULE")
 
@@ -142,8 +144,12 @@ contains
         call s_find_ghost_points(ghost_points, inner_points)
         call s_apply_levelset(ghost_points, num_gps)
 
-        call s_compute_image_points(ghost_points)
-        call s_compute_interpolation_coeffs(ghost_points)
+        if (testing) then
+            call s_radial_search()
+        else
+            call s_compute_image_points(ghost_points)
+            call s_compute_interpolation_coeffs(ghost_points)
+        end if
 
         call nvtxEndRange
 
@@ -254,15 +260,16 @@ contains
     !>  Interpolates sigma from the m_igr module at all ghost points
         !!  @param jac: Sigma, Entropic pressure
     subroutine s_interpolate_sigma_igr(jac)
+
         real(wp), dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:), intent(inout) :: jac
-        integer :: j, k, l, r, s, t, i
+        integer :: j, k, l, r, s, t, i, q
         integer :: j1, j2, k1, k2, l1, l2
-        real(wp) :: coeff, jac_IP
+        real(wp) :: coeff, jac_IP, neum
         type(ghost_point) :: gp
 
         ! At all ghost points, use its image point to interpolate sigma
         if (num_gps > 0) then
-            $:GPU_PARALLEL_LOOP(private='[i, j, k, l, j1, j2, k1, k2, l1, l2, r, s, t, gp, coeff, jac_IP]')
+            $:GPU_PARALLEL_LOOP(private='[q,neum,i, j, k, l, j1, j2, k1, k2, l1, l2, r, s, t, gp, coeff, jac_IP]')
             do i = 1, num_gps
                 jac_IP = 0._wp
                 gp = ghost_points(i)
@@ -278,20 +285,32 @@ contains
                     l1 = 0
                     l2 = 0
                 end if
+                jac(r, s, t) = 0._wp
+                $:GPU_LOOP(parallelism='[seq]')
+                do q = 2, gp%M
+                    j = gp%stencil(q, 1)
+                    k = gp%stencil(q, 2)
+                    l = gp%stencil(q, 3)
+                    neum = sum(gp%levelset_norm * gp%A(2:4, q))
+                    jac(r, s, t) = jac(r, s, t) &
+                        - neum * jac(j, k, l)
+                end do
+                neum = sum(gp%levelset_norm * gp%A(2:4, 1))
+                jac(r, s, t) = jac(r, s, t) / neum
 
                 ! Interpolate sigma using coeffs at the points around the corresponding image point
-                $:GPU_LOOP(parallelism='[seq]')
-                do l = l1, l2
-                    $:GPU_LOOP(parallelism='[seq]')
-                    do k = k1, k2
-                        $:GPU_LOOP(parallelism='[seq]')
-                        do j = j1, j2
-                            coeff = gp%interp_coeffs(j - j1 + 1, k - k1 + 1, l - l1 + 1)
-                            jac_IP = jac_IP + coeff*jac(j, k, l)
-                        end do
-                    end do
-                end do
-                jac(r, s, t) = jac_IP
+                ! $:GPU_LOOP(parallelism='[seq]')
+                ! do l = l1, l2
+                !     $:GPU_LOOP(parallelism='[seq]')
+                !     do k = k1, k2
+                !         $:GPU_LOOP(parallelism='[seq]')
+                !         do j = j1, j2
+                !             coeff = gp%interp_coeffs(j - j1 + 1, k - k1 + 1, l - l1 + 1)
+                !             jac_IP = jac_IP + coeff*jac(j, k, l)
+                !         end do
+                !     end do
+                ! end do
+                ! jac(r, s, t) = jac_IP
             end do
             $:END_GPU_PARALLEL_LOOP()
         end if
@@ -314,6 +333,7 @@ contains
         real(stp), dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:, 1:, 1:), optional, intent(INOUT) :: pb_in, mv_in
 
         integer :: i, j, k, l, q, r!< Iterator variables
+        integer :: u, v
         integer :: patch_id !< Patch ID of ghost point
         real(wp) :: rho, gamma, pi_inf, dyn_pres !< Mixture variables
         real(wp), dimension(2) :: Re_K
@@ -348,6 +368,10 @@ contains
 
         real(wp) :: nbub
         type(ghost_point) :: gp, innerp
+        real(wp) :: dirich,neum
+
+        logical :: test
+        test = .true.
 
         if(.not. igr .or. dummy) then
             ! set the Moving IBM interior Pressure Values
@@ -391,9 +415,9 @@ contains
         end if
 
         if (num_gps > 0) then
-            $:GPU_PARALLEL_LOOP(private='[i,physical_loc,dyn_pres,alpha_rho_IP,alpha_IP,pres_IP,vel_IP,vel_g,vel_wall,rel_norm_vel,r_IP,E_IP,v_IP,pb_IP,mv_IP,nmom_IP,presb_IP,massv_IP,rho,gamma,pi_inf,Re_K,G_K,Gs,gp,innerp,norm, radial_vector, rotation_velocity, j,k,l,q,qv_K,c_IP,nbub,patch_id]')
+            $:GPU_PARALLEL_LOOP(private='[neum,u,v,i,physical_loc,dyn_pres,alpha_rho_IP,alpha_IP,pres_IP,vel_IP,vel_g,vel_wall,rel_norm_vel,r_IP,E_IP,v_IP,pb_IP,mv_IP,nmom_IP,presb_IP,massv_IP,rho,gamma,pi_inf,Re_K,G_K,Gs,gp,innerp,norm, radial_vector, rotation_velocity, j,k,l,q,qv_K,c_IP,nbub,patch_id]' &
+                ,copyin='[test]')
             do i = 1, num_gps
-
                 gp = ghost_points(i)
                 j = gp%loc(1)
                 k = gp%loc(2)
@@ -406,7 +430,59 @@ contains
                 else
                     physical_loc = [x_cc(j), y_cc(k), 0._wp]
                 end if
+                if(test) then
+                    if(igr) then
 
+                        q_cons_vf(contxb)%sf(j, k, 0) = 0._wp
+                        q_cons_vf(E_idx)%sf(j, k, 0) = 0._wp
+                        c_IP = 0._wp
+                        do q = 2, gp%M
+                            u = gp%stencil(q, 1)
+                            v = gp%stencil(q, 2)
+                        !    vel_IP(1) = q_cons_vf(momxb)%sf(u, v, 0) / q_cons_vf(contxb)%sf(u, v, 0)
+                        !    vel_IP(2) = q_cons_vf(momxb + 1)%sf(u, v, 0) / q_cons_vf(contxb)%sf(u, v, 0)
+                        !    dyn_pres = 0.5_wp * sum(vel_IP ** 2) * q_cons_vf(contxb)%sf(u, v, 0)
+                        !    pres_IP = (q_cons_vf(E_idx)%sf(u, v, 0) - dyn_pres) / 2.5_wp
+                            neum = sum(gp%levelset_norm * gp%A(2:4, q))
+                            q_cons_vf(contxb)%sf(j, k, 0) = q_cons_vf(contxb)%sf(j, k, 0) &
+                                - neum * q_cons_vf(contxb)%sf(u, v, 0)
+                        !    c_IP = c_IP - pres_IP * neum
+                            ! q_cons_vf(E_idx)%sf(j, k, 0) = q_cons_vf(E_idx)%sf(j, k, 0) &
+                            !     - neum * q_cons_vf(E_idx)%sf(u, v, 0)
+                            q_cons_vf(E_idx)%sf(j, k, 0) = q_cons_vf(E_idx)%sf(j, k, 0) &
+                                - neum * q_cons_vf(E_idx)%sf(u, v, 0)
+                        end do
+                        neum = sum(gp%levelset_norm * gp%A(2:4, 1))
+                        q_cons_vf(contxb)%sf(j, k, 0) = q_cons_vf(contxb)%sf(j, k, 0) / neum
+                        q_cons_vf(E_idx)%sf(j, k, 0) = q_cons_vf(E_idx)%sf(j, k, 0) / neum
+                        !c_IP = c_IP / neum
+
+                        vel_g(1) = 0._wp
+                        vel_g(2) = 0._wp
+                        do q = 2, gp%M
+                            u = gp%stencil(q, 1)
+                            v = gp%stencil(q, 2)
+                            vel_g(1) = vel_g(1) - gp%A(1, q) * q_cons_vf(momxb)%sf(u, v, 0) / q_cons_vf(contxb)%sf(u, v, 0)
+                            vel_g(2) = vel_g(2) - gp%A(1, q) * q_cons_vf(momxb + 1)%sf(u, v, 0) / q_cons_vf(contxb)%sf(u, v, 0)
+                        end do
+                        q_cons_vf(momxb)%sf(j, k, 0) = q_cons_vf(contxb)%sf(j, k, 0) * vel_g(1) / gp%A(1, 1)
+                        q_cons_vf(momxb + 1)%sf(j, k, 0) = q_cons_vf(contxb)%sf(j, k, 0) * vel_g(2) / gp%A(1, 1)
+                        !dyn_pres = 0.5_wp * sum((vel_g / gp%A(1, 1)) ** 2) * q_cons_vf(contxb)%sf(j, k, 0)
+                        !q_cons_vf(E_idx)%sf(j, k, 0) = c_IP * 2.5_wp + dyn_pres
+                        !q_cons_vf(momxb)%sf(j, k, 0) = q_cons_vf(contxb)%sf(j, k, 0) * vel_g(1) / gp%A(1, 1)
+                        ! if (mod(i, int(num_gps / 20)) == 0) then
+                        !     do q = 2, gp%M
+                        !     u = gp%stencil(q, 1)
+                        !     v = gp%stencil(q, 2)
+                        !     q_cons_vf(E_idx)%sf(u, v, 0) = real(i, kind=wp)
+                        !     q_cons_vf(momxb)%sf(u, v, 0) = real(i, kind=wp)
+                        !     end do
+                        !     q_cons_vf(E_idx)%sf(j, k, 0) = real(i, kind=wp)
+                        !     q_cons_vf(momxb)%sf(u, v, 0) = real(i, kind=wp)
+                        ! end if
+                        ! q_cons_vf(contxb)%sf(j, k, 0) = gp%cond
+                    end if
+                else 
                 !Interpolate primitive variables at image point associated w/ GP
                 if (bubbles_euler .and. .not. qbmm) then
                     call s_interpolate_image_point(q_prim_vf, gp, &
@@ -582,6 +658,7 @@ contains
                         q_cons_vf(q)%sf(j, k, l) = alpha_IP(q - intxb + 1)*(gammas(q - intxb + 1)*pres_IP &
                                                                             + pi_infs(q - intxb + 1))
                     end do
+                end if
                 end if
             end do
             $:END_GPU_PARALLEL_LOOP()
@@ -866,6 +943,217 @@ contains
         $:END_GPU_PARALLEL_LOOP()
 
     end subroutine s_find_ghost_points
+
+    subroutine s_radial_search()
+        type(ghost_point) :: gp
+        integer :: p
+        integer :: count, maxCount, i, j, k, r_step, i0, j0, q, l, col
+        real(wp) :: R, r_loc, r_prev, dr
+        real(wp) :: x_p, y_p, z_p
+        real(wp), dimension(3) :: center
+        integer :: M, order, L
+        real(wp), dimension(200) :: weights
+        real(wp), dimension(:, :), allocatable :: WV, WV_PINV, A
+        real(wp) :: cond, maxCond
+        real(wp) :: max_x, min_x
+        real(wp) :: max_y, min_y
+        real(wp) :: finalRad
+        maxCond = 0._wp
+        L = 6
+
+        allocate(A(L, 200))
+        $:GPU_UPDATE(host='[ghost_points]')
+        if (num_gps > 0) then
+!            $:GPU_PARALLEL_LOOP(private='[gp,p,count,maxCount,i,j,k,r_step,i0,j0,q,l,col &
+!                R,r,r_prev,dr,x_p,y_p,z_p,center,M,order,weights,WV,WV_PINV,A]', copyin='[ghost_points]')
+            do p = 1, num_gps
+                gp = ghost_points(p)
+                order = 2
+                ! center = [x_cc(gp%loc(1)), y_cc(gp%loc(2)), 0._wp]
+                center = [gp%bound_loc(1), gp%bound_loc(2), 0._wp]
+                !maxCount = int(10 * patch_ib(1)%smooth)
+                maxCount = int(L * 1.75)
+                i0 = gp%loc(1)
+                j0 = gp%loc(2)
+                !k0 = gp%loc(3)
+                dr = dx(i0) ** 2 + dy(j0) ** 2
+                if (num_dims == 3) then
+                !    dr = dr + dz(k0) ** 2
+                end if
+                dr = sqrt(dr)
+                !dr = 0.3_wp * dr
+                dr = 0.5 * dr
+
+                ! entry 1 is ghost cell
+                ghost_points(p)%stencil(1, :) = [i0, j0, 0]
+                count = 1
+
+                r_prev = -1e-6_wp
+                R = dr
+                r_step = 20
+                max_x = -9999999.99_wp
+                max_y = -9999999.99_wp
+                min_x = 9999999.99_wp
+                min_y = 9999999.99_wp
+                finalRad = -99.0_wp
+
+                do while (count < maxCount)
+                    !R = abs(x_cc(i0) - x_cc(i0 - r_step)) 
+                    do i = i0 - r_step, i0 + r_step
+                        do j = j0 - r_step, j0 + r_step
+                            r_loc = sqrt((x_cc(i) - center(1))**2 + (y_cc(j) - center(2))**2)
+                            if (r_loc <= R .and. r_loc > r_prev) then
+                                if (ib_markers%sf(i, j, 0) == 0) then
+                                    count = count + 1
+                                    ghost_points(p)%stencil(count, :) = [i, j, 0]
+                                    max_x = max(max_x, x_cc(i))
+                                    min_x = min(min_x, x_cc(i))
+                                    max_y = max(max_y, y_cc(j))
+                                    min_y = min(min_y, y_cc(j))
+                                    finalRad = max(finalRad, r_loc)
+                                end if
+                            end if
+                        end do
+                    end do
+                    r_prev = R
+                    !r_step = r_step + 1
+                    R = R + dr
+                end do
+                !print *, "FOUND STENCIL"
+
+                !R = finalRad + dr
+                !R = R + 20._wp * dr
+                M = count
+                allocate(WV(M, L))
+                allocate(WV_PINV(L, M))
+
+                ! R = (x_cc(ghost_points(p)%stencil(M, 1)) - center(1)) ** 2 &
+                !         + (y_cc(ghost_points(p)%stencil(M, 2)) - center(2)) ** 2
+                ! x_p = x_cc(ghost_points(p)%stencil(M, 1)) - center(1)
+                ! x_p = 2._wp * (x_p - min_x) / (max_x - min_x) - 1._wp
+                ! y_p = y_cc(ghost_points(p)%stencil(M, 2)) - center(2)
+                ! y_p = 2._wp * (y_p - min_y) / (max_y - min_y) - 1._wp
+                ! R = x_p ** 2 + y_p ** 2
+                ! if (num_dims == 3) then
+                !     R = R + (z_cc(ghost_points(p)%stencil(M, 3)) - center(3)) ** 2
+                ! end if
+                ! R = sqrt(R)
+
+                ! compute weights
+                do q = 1, M
+                    ! cosine weight function
+                    ! x_p = x_cc(ghost_points(p)%stencil(q, 1)) - center(1)
+                    ! x_p = 2._wp * (x_p - min_x) / (max_x - min_x) - 1._wp
+                    ! y_p = y_cc(ghost_points(p)%stencil(q, 2)) - center(2)
+                    ! y_p = 2._wp * (y_p - min_y) / (max_y - min_y) - 1._wp
+                    r_loc = (x_cc(ghost_points(p)%stencil(q, 1)) - center(1)) ** 2 &
+                       + (y_cc(ghost_points(p)%stencil(q, 2)) - center(2)) ** 2
+                    !r_loc = x_p ** 2 + y_p ** 2
+                    if (num_dims == 3) then
+                        r_loc = r_loc + (z_cc(ghost_points(p)%stencil(q, 3)) - center(3)) ** 2
+                    end if
+                    r_loc = sqrt(r_loc)
+                    weights(q) = 0.5_wp * (1 + cos((pi * r_loc / R)))
+                end do
+                !print *, "COMPUTE WEIGHTS"
+
+                !print *, "ALLOCATED ARRAYS"
+                ! Construct WV
+                do q = 1, M
+                    x_p = x_cc(ghost_points(p)%stencil(q, 1)) - center(1)
+                   ! x_p = 2._wp * (x_p - min_x) / (max_x - min_x) - 1._wp
+                    x_p = x_p / R
+                    y_p = y_cc(ghost_points(p)%stencil(q, 2)) - center(2)
+                    y_p = y_p / R
+                    !y_p = 2._wp * (y_p - min_y) / (max_y - min_y) - 1._wp
+                    if (num_dims == 3) then
+                        z_p = z_cc(ghost_points(p)%stencil(q, 3)) - center(3)
+                    end if
+                    col = 1
+                    do l = 0, order
+                        do i = l, 0, -1
+                            j = l - i
+                            WV(q, col) = weights(q) * x_p ** i * y_p ** j
+                            col = col + 1
+                        end do
+                    end do
+                end do
+
+                call find_p_inv(M, L, WV, WV_PINV, cond)
+
+                maxCond = max(maxCond, cond)
+                do q = 1, M
+                    do l = 1, L
+                        A(l, q) = weights(q) * WV_PINV(l, q)
+                    end do
+                end do
+
+                do q = 1, M
+                    ghost_points(p)%A(1, q) = A(1, q)
+                    ghost_points(p)%A(2, q) = A(2, q) / R
+                    ghost_points(p)%A(3, q) = A(3, q) / R
+                    ghost_points(p)%A(4, q) = A(4, q) / R
+                    ghost_points(p)%A(4, q) = 0._wp
+                end do
+                ghost_points(p)%M = M
+                ghost_points(p)%cond = cond
+                deallocate(WV)
+                deallocate(WV_PINV)
+            end do
+        end if
+        $:GPU_UPDATE(device='[ghost_points]')
+        deallocate(A)
+        print *, "maxCond: "
+        print *, maxCond
+
+    end subroutine s_radial_search
+
+    subroutine find_p_inv(M, N, A, PINV,cond)
+        integer, intent(in) :: M, N
+        real(wp), dimension(M, N), intent(inout) :: A
+        real(wp), dimension(N, M), intent(out) :: PINV
+        integer :: K, LDU, LDVT, LDA, LWORK, INFO, j
+        real(wp) :: TOL
+        real(wp), dimension(:), allocatable :: S, WORK
+        real(wp), dimension(:, :), allocatable :: U, VT
+        real(wp), dimension(1) :: DUMMY_WORK
+        real(wp), intent(out) :: cond
+
+        LDA = M
+        K = min(M, N)
+        LDU = M
+        LDVT = K
+
+        allocate(S(K))
+        allocate(U(LDU, K))
+        allocate(VT(LDVT, N))
+
+        LWORK = -1
+        call dgesvd('S', 'S', M, N, A, LDA, S, U, LDU, VT, LDVT, DUMMY_WORK, LWORK, INFO)
+
+        LWORK = int(DUMMY_WORK(1))
+        allocate(WORK(LWORK))
+
+        call dgesvd('S', 'S', M, N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, INFO)
+        if (INFO /= 0) then
+            print *, "SVD DID NOT CONVERGE", INFO
+        end if
+        
+        tol = max(M, N) * epsilon(1._wp) * S(1)
+
+        do j = 1, K
+            if (S(j) > tol) then
+                U(1:M, j) = U(1:M, j) / S(j)
+            else
+                U(1:M, j) = 0._wp
+            end if
+        end do
+
+        call dgemm('T', 'T', N, M, K, 1._wp, VT, LDVT, U, LDU, 0._wp, PINV, N)
+
+        cond = S(1) / S(K)
+        deallocate(S, U, VT, WORK)
+    end subroutine find_p_inv
 
     !>  Function that computes the interpolation coefficients of image points
     subroutine s_compute_interpolation_coeffs(ghost_points_in)

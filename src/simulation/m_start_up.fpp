@@ -863,10 +863,13 @@ contains
                 call s_populate_variables_buffers(bc_type, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
             end if
             call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
+            print *, "finished correct state"
             if(igr) then
                 call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
                 call s_save_data(t_step, start1, finish1, io_time_avg, nt)
             end if
+
+            print *, "saved here"
         end if
 
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
@@ -1043,7 +1046,7 @@ contains
                 do k = 0, n
                     do j = 0, m
                         if (ieee_is_nan(real(q_cons_ts(stor)%vf(i)%sf(j, k, l), kind=wp))) then
-                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
+                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p, x_cc(j), y_cc(k)
 
                             call s_mpi_abort("NaN(s) in timestep output.")
                         end if

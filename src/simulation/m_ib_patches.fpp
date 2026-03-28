@@ -190,10 +190,13 @@ contains
         ! identity and smearing coefficient information
         center(1) = patch_ib(patch_id)%x_centroid + real(xp, wp)*(x_domain%end - x_domain%beg)
         center(2) = patch_ib(patch_id)%y_centroid + real(yp, wp)*(y_domain%end - y_domain%beg)
+        center(1) = patch_ib(patch_id)%x_centroid 
+        center(2) = patch_ib(patch_id)%y_centroid
+
         radius = patch_ib(patch_id)%radius
 
         ! encode the periodicity information into the patch_id
-        call s_encode_patch_periodicity(patch_id, xp, yp, 0, encoded_patch_id)
+        !call s_encode_patch_periodicity(patch_id, xp, yp, 0, encoded_patch_id)
 
         ! find the indices to the left and right of the IB in i, j, k
         il = -gp_layers - 1
@@ -207,7 +210,11 @@ contains
         ! and verifying whether the current patch has permission to write to
         ! that cell. If both queries check out, the primitive variables of
         ! the current patch are assigned to this cell.
-
+il = -gp_layers - 1
+        jl = -gp_layers - 1
+        ir = m + gp_layers + 1
+        jr = n + gp_layers + 1
+        encoded_patch_id = 1
         $:GPU_PARALLEL_LOOP(private='[i,j]',&
                   & copyin='[encoded_patch_id,center,radius]', collapse=2)
         do j = jl, jr

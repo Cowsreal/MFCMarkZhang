@@ -199,6 +199,10 @@ contains
             gp%levelset_norm = dist_vec(:)/dist
         end if
 
+        gp%bound_loc(1) = x_cc(i) - gp%levelset * gp%levelset_norm(1)
+        gp%bound_loc(2) = y_cc(j) - gp%levelset * gp%levelset_norm(2)
+        gp%bound_loc(3) = 0._wp
+
     end subroutine s_circle_levelset
 
     !> @brief Computes the signed distance and outward normal from a ghost point to a 2D NACA airfoil surface.
