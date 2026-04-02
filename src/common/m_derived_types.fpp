@@ -327,7 +327,13 @@ module m_derived_types
         real(wp) :: inner_radius
         real(wp) :: steep
         real(wp) :: shift
+        real(wp) :: dr_fac
+        real(wp) :: pts
+        real(wp) :: temp
+        integer :: high_order
 
+        logical :: hybrid
+        logical :: print_cond
         logical :: slip
         logical :: true_bcs !< Enables proper boundary conditions for velocity (slip/no slip)
 
@@ -464,10 +470,12 @@ module m_derived_types
         integer, dimension(3) :: DB
         integer :: x_periodicity, y_periodicity, z_periodicity
 
-        integer, dimension(200, 3) :: stencil
-        real(wp), dimension(4, 200) :: A
+        integer, dimension(:, :), allocatable :: stencil
+        real(wp), dimension(:), allocatable :: A_neum
+        real(wp), dimension(:), allocatable :: A_dirich
         integer :: M
         real(wp) :: cond
+        logical :: first_layer
     end type ghost_point
 
     !> Species parameters

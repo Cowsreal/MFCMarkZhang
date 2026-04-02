@@ -874,6 +874,7 @@ contains
             patch_ib(i)%slip = .false.
             patch_ib(i)%true_bcs = .false.
             patch_ib(i)%inner_radius = dflt_real
+            patch_ib(i)%temp = dflt_real
 
             ! Proper default values for translating STL models
             patch_ib(i)%model_scale(:) = 1._wp

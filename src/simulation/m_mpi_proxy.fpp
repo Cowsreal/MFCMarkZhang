@@ -210,12 +210,15 @@ contains
             #:for VAR in [ 'radius', 'length_x', 'length_y', 'length_z', &
                 'x_centroid', 'y_centroid', 'z_centroid', 'smooth', 'c', 'm', &
                 'p', 't', 'theta', 'slip', 'true_bcs', 'mass', 'model_threshold', &
-                'steep', 'shift']
+                'steep', 'shift', 'pts', 'dr_fac', 'temp']
                 call MPI_BCAST(patch_ib(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
             #:for VAR in ['vel', 'angular_vel', 'angles', 'model_translate', 'model_scale']
                 call MPI_BCAST(patch_ib(i)%${VAR}$, 3, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
+            call MPI_BCAST(patch_ib(i)%high_order, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(patch_ib(i)%print_cond, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(patch_ib(i)%hybrid, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(patch_ib(i)%geometry, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(patch_ib(i)%moving_ibm, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(patch_ib(i)%model_spc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)

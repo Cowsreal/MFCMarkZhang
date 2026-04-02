@@ -55,6 +55,7 @@ def __profiler_prepend() -> typing.List[str]:
         if not does_command_exist("rocprof"):
             raise MFCException("Failed to locate [bold red]ROCM rocprof-systems[/bold red] (rocprof-systems).")
 
+        #return ["rocprofv3", "-d", "trace_rank_\\$SLURM_PROCID"] + ARG("rsys")
         return ["rocprof"] + ARG("rsys")
 
     return []

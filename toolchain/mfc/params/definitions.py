@@ -1078,7 +1078,7 @@ def _load():  # pylint: disable=too-many-locals,too-many-statements
         for a in ["geometry", "moving_ibm"]:
             _r(f"{px}{a}", INT, {"ib"})
         for a, pt in [("true_bcs", LOG), ("smooth", REAL), ("radius", REAL), ("steep", REAL), ("shift", REAL), ("inner_radius", REAL), ("theta", REAL), ("slip", LOG), ("c", REAL),
-                      ("p", REAL), ("t", REAL), ("m", REAL), ("mass", REAL)]:
+                      ("p", REAL), ("t", REAL), ("m", REAL), ("mass", REAL), ("high_order", INT), ("dr_fac", REAL), ("pts", REAL), ("print_cond", LOG), ("hybrid", LOG), ("temp", REAL)]:
             _r(f"{px}{a}", pt, {"ib"})
         for j in range(1, 4):
             _r(f"{px}angles({j})", REAL, {"ib"})
