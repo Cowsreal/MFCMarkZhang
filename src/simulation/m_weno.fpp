@@ -14,9 +14,12 @@ module m_weno
 
     use m_mpi_proxy
     use m_muscl
-    private; public :: s_initialize_weno_module, s_finalize_weno_module, s_weno
+    private; public :: s_initialize_weno_module, s_finalize_weno_module, s_weno, s_pack_weno_input_arr
 
     ! WENO Coefficients
+    !
+    real(wp), allocatable, dimension(:, :, :, :) :: v_rs
+    $:GPU_DECLARE(create='[v_rs]')
 
     !> @name Polynomial coefficients at the left and right cell-boundaries (CB) and at the left and right quadrature points (QP), in
     !! the x-, y- and z-directions. Note that the first dimension of the array identifies the polynomial, the second dimension
@@ -106,6 +109,11 @@ contains
         ! Number of cross terms for dvd = (k-1)(k-1+1)/2, where weno_polyn = k-1 Note: k-1 not k because we are using value
         ! differences (dvd) not the values themselves
 
+        @:ALLOCATE(v_rs(is1_weno%beg:is1_weno%end, &
+                        is2_weno%beg:is2_weno%end, &
+                        is3_weno%beg:is3_weno%end, &
+                        1:sys_size))
+        
         call s_compute_weno_coefficients(1, is1_weno)
 
         ! Allocating/Computing WENO Coefficients in y-direction
@@ -840,11 +848,29 @@ contains
 
     end subroutine s_compute_weno_coefficients
 
+    subroutine s_pack_weno_input_arr(v_vf)
+
+        type(scalar_field), dimension(1:), intent(in) :: v_vf
+        integer :: i, j, k, l
+
+        $:GPU_PARALLEL_LOOP(collapse=4)
+        do i = 1, sys_size
+            do l = idwbuff(3)%beg, idwbuff(3)%end
+                do k = idwbuff(2)%beg, idwbuff(2)%end
+                    do j = idwbuff(1)%beg, idwbuff(1)%end
+                        v_rs(j, k, l, i) = v_vf(i)%sf(j, k, l)
+                    end do
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_pack_weno_input_arr
+
     !> Perform WENO reconstruction of left and right cell-boundary values from cell-averaged variables
     subroutine s_weno(v_vf, vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, weno_dir, is1_weno_d, &
 
         & is2_weno_d, is3_weno_d)
-
 
         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z
@@ -870,6 +896,7 @@ contains
         real(wp), dimension(-3:3) :: v  !< temporary field value array for clarity (WENO7 only)
         real(wp)                  :: tau
         integer                   :: i, j, k, l, q
+        real(wp) :: vm2, vm1, v0, vp1, vp2  !< scalars to store repeatedly accessed stencils
 
         is1_weno = is1_weno_d
         is2_weno = is2_weno_d
@@ -1020,7 +1047,8 @@ contains
                     #:set SV = STENCIL_VAR
                     #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
                     if (weno_dir == ${WENO_DIR}$) then
-                        $:GPU_PARALLEL_LOOP(collapse=3,private='[dvd, poly, beta, alpha, omega, tau, delta, q]')
+                        $:GPU_PARALLEL_LOOP(collapse=3,private='[dvd, poly, beta, alpha, omega, tau, delta, q, vm2, vm1, v0, vp1, &
+                        vp2]')
                         do l = ${Z_BND}$%beg, ${Z_BND}$%end
                             do k = ${Y_BND}$%beg, ${Y_BND}$%end
                                 do j = ${X_BND}$%beg, ${X_BND}$%end
@@ -1028,36 +1056,45 @@ contains
                                     do i = 1, v_size
                                         ! reconstruct from left side
 
-                                        alpha(:) = 0._wp
-                                        omega(:) = 0._wp
-                                        delta(:) = 0._wp
-                                        beta(:) = weno_eps
+                                        !alpha(:) = 0._wp
+                                        !omega(:) = 0._wp
+                                        !delta(:) = 0._wp
+                                        !beta(:) = weno_eps
 
-                                        dvd(1) = v_vf(i)%sf(${SF(' + 2')}$) - v_vf(i)%sf(${SF(' + 1')}$)
-                                        dvd(0) = v_vf(i)%sf(${SF(' + 1')}$) - v_vf(i)%sf(${SF('')}$)
-                                        dvd(-1) = v_vf(i)%sf(${SF('')}$) - v_vf(i)%sf(${SF(' - 1')}$)
-                                        dvd(-2) = v_vf(i)%sf(${SF(' - 1')}$) - v_vf(i)%sf(${SF(' - 2')}$)
+                                        vm2 = v_rs(${SF(' - 2')}$, i)
+                                        vm1 = v_rs(${SF(' - 1')}$, i)
+                                        v0  = v_rs(${SF('')}$, i)
+                                        vp1 = v_rs(${SF(' + 1')}$, i)
+                                        vp2 = v_rs(${SF(' + 2')}$, i)
 
-                                        poly(0) = v_vf(i)%sf(${SF('')}$) + poly_coef_cbL_${XYZ}$ (${SV}$, 0, &
-                                             & 0)*dvd(1) + poly_coef_cbL_${XYZ}$ (${SV}$, 0, 1)*dvd(0)
-                                        poly(1) = v_vf(i)%sf(${SF('')}$) + poly_coef_cbL_${XYZ}$ (${SV}$, 1, &
-                                             & 0)*dvd(0) + poly_coef_cbL_${XYZ}$ (${SV}$, 1, 1)*dvd(-1)
-                                        poly(2) = v_vf(i)%sf(${SF('')}$) + poly_coef_cbL_${XYZ}$ (${SV}$, 2, &
-                                             & 0)*dvd(-1) + poly_coef_cbL_${XYZ}$ (${SV}$, 2, 1)*dvd(-2)
+                                        dvd(1) = vp2 - vp1
+                                        dvd(0) = vp1 - v0
+                                        dvd(-1) = v0 - vm1
+                                        dvd(-2) = vm1 - vm2
 
-                                        beta(0) = beta_coef_${XYZ}$ (${SV}$, 0, 0)*dvd(1)*dvd(1) + beta_coef_${XYZ}$ (${SV}$, 0, &
-                                             & 1)*dvd(1)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, 0, 2)*dvd(0)*dvd(0) + weno_eps
-                                        beta(1) = beta_coef_${XYZ}$ (${SV}$, 1, 0)*dvd(0)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, 1, &
-                                             & 1)*dvd(0)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, 1, 2)*dvd(-1)*dvd(-1) + weno_eps
-                                        beta(2) = beta_coef_${XYZ}$ (${SV}$, 2, 0)*dvd(-1)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, 2, &
-                                             & 1)*dvd(-1)*dvd(-2) + beta_coef_${XYZ}$ (${SV}$, 2, 2)*dvd(-2)*dvd(-2) + weno_eps
+                                        poly(0) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 0, 0)*dvd(1) &
+                                                     + poly_coef_cbL_${XYZ}$ (${SV}$, 0, 1)*dvd(0)
+                                        poly(1) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 1, 0)*dvd(0) &
+                                                     + poly_coef_cbL_${XYZ}$ (${SV}$, 1, 1)*dvd(-1)
+                                        poly(2) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 2, 0)*dvd(-1) &
+                                                     + poly_coef_cbL_${XYZ}$ (${SV}$, 2, 1)*dvd(-2)
+
+                                        beta(0) = beta_coef_${XYZ}$ (${SV}$, 0, 0)*dvd(1)*dvd(1) &
+                                                + beta_coef_${XYZ}$ (${SV}$, 0, 1)*dvd(1)*dvd(0) &
+                                                + beta_coef_${XYZ}$ (${SV}$, 0, 2)*dvd(0)*dvd(0) + weno_eps
+                                        beta(1) = beta_coef_${XYZ}$ (${SV}$, 1, 0)*dvd(0)*dvd(0) &
+                                                + beta_coef_${XYZ}$ (${SV}$, 1, 1)*dvd(0)*dvd(-1) &
+                                                + beta_coef_${XYZ}$ (${SV}$, 1, 2)*dvd(-1)*dvd(-1) + weno_eps
+                                        beta(2) = beta_coef_${XYZ}$ (${SV}$, 2, 0)*dvd(-1)*dvd(-1) &
+                                                + beta_coef_${XYZ}$ (${SV}$, 2, 1)*dvd(-1)*dvd(-2) &
+                                                + beta_coef_${XYZ}$ (${SV}$, 2, 2)*dvd(-2)*dvd(-2) + weno_eps
 
                                         if (wenojs) then
-                                            alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)/(beta(0:weno_num_stencils)**2._wp)
+                                            alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, ${SV}$) &
+                                                                        /(beta(0:weno_num_stencils)**2._wp)
                                         else if (mapped_weno) then
-                                            alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)/(beta(0:weno_num_stencils)**2._wp)
+                                            alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, ${SV}$) &
+                                                                        /(beta(0:weno_num_stencils)**2._wp)
                                             omega = alpha/sum(alpha)
                                             alpha(0:weno_num_stencils) = (d_cbL_${XYZ}$ (0:weno_num_stencils, &
                                                   & ${SV}$)*(1._wp + d_cbL_${XYZ}$ (0:weno_num_stencils, &
@@ -1102,11 +1139,11 @@ contains
 
                                         ! reconstruct from right side
 
-                                        poly(0) = v_vf(i)%sf(${SF('')}$) + poly_coef_cbR_${XYZ}$ (${SV}$, 0, &
-                                             & 0)*dvd(1) + poly_coef_cbR_${XYZ}$ (${SV}$, 0, 1)*dvd(0)
-                                        poly(1) = v_vf(i)%sf(${SF('')}$) + poly_coef_cbR_${XYZ}$ (${SV}$, 1, &
+                                        poly(0) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 0, 0)*dvd(1) &
+                                                     + poly_coef_cbR_${XYZ}$ (${SV}$, 0, 1)*dvd(0)
+                                        poly(1) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 1, &
                                              & 0)*dvd(0) + poly_coef_cbR_${XYZ}$ (${SV}$, 1, 1)*dvd(-1)
-                                        poly(2) = v_vf(i)%sf(${SF('')}$) + poly_coef_cbR_${XYZ}$ (${SV}$, 2, &
+                                        poly(2) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 2, &
                                              & 0)*dvd(-1) + poly_coef_cbR_${XYZ}$ (${SV}$, 2, 1)*dvd(-2)
 
                                         if (wenojs) then
@@ -1487,6 +1524,7 @@ contains
     !> Module deallocation and/or disassociation procedures
     impure subroutine s_finalize_weno_module()
 
+        @:DEALLOCATE(v_rs)
         if (weno_order == 1) return
 
         ! Deallocating WENO coefficients in x-direction

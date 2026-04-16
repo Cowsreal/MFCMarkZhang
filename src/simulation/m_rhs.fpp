@@ -615,6 +615,11 @@ contains
         end if
 
         ! Loop over coordinate directions for dimensional splitting
+        if (recon_type == WENO_TYPE .or. dummy) then
+            call nvtxStartRange("WENO-VARIABLE-PACK")
+            call s_pack_weno_input_arr(q_prim_qp%vf(1:sys_size))
+            call nvtxEndRange
+        end if
         do id = 1, num_dims
             if (igr .or. dummy) then
                 if (id == 1) then
