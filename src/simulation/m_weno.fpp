@@ -904,6 +904,21 @@ contains
 
         $:GPU_UPDATE(device='[is1_weno, is2_weno, is3_weno, v_size]')
 
+        if (weno_order == 1 .or. dummy) then
+            $:GPU_PARALLEL_LOOP(collapse=4)
+            do i = 1, ubound(v_vf, 1)
+                do l = is3_weno%beg, is3_weno%end
+                    do k = is2_weno%beg, is2_weno%end
+                        do j = is1_weno%beg, is1_weno%end
+                            vL_rs_vf_x(j, k, l, i) = v_vf(i)%sf(j, k, l)
+                            vR_rs_vf_x(j, k, l, i) = v_vf(i)%sf(j, k, l)
+                        end do
+                    end do
+                end do
+            end do
+            $:END_GPU_PARALLEL_LOOP()
+        end if
+
         if (weno_order == 3 .or. dummy) then
             #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND, Y_BND, Z_BND in &
                 [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'is1_weno', 'is2_weno', 'is3_weno'), &
