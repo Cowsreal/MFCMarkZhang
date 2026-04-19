@@ -1609,43 +1609,28 @@ contains
     !> Reconstruct left and right cell-boundary values from cell-averaged variables
     subroutine s_reconstruct_cell_boundary_values(v_vf, vL_x, vL_y, vL_z, vR_x, vR_y, vR_z, norm_dir)
 
-        type(scalar_field), dimension(iv%beg:iv%end), intent(in) :: v_vf
+        type(scalar_field), dimension(iv%beg:iv%end), intent(in)                               :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_x, vL_y, vL_z
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vR_x, vR_y, vR_z
-        integer, intent(in) :: norm_dir
-        integer :: recon_dir  !< Coordinate direction of the reconstruction
-        integer :: i, j, k, l
+        integer, intent(in)                                                                    :: norm_dir
+        integer                                                                                :: i, j, k, l
 
         #:for SCHEME, TYPE in [('weno','WENO_TYPE'), ('muscl','MUSCL_TYPE')]
             if (recon_type == ${TYPE}$ .or. dummy) then
                 ! Reconstruction in s1-direction
-                if (norm_dir == 1) then
-                    is1 = idwbuff(1); is2 = idwbuff(2); is3 = idwbuff(3)
-                    recon_dir = 1; is1%beg = is1%beg + ${SCHEME}$_polyn
-                    is1%end = is1%end - ${SCHEME}$_polyn
-                else if (norm_dir == 2) then
-                    is1 = idwbuff(2); is2 = idwbuff(1); is3 = idwbuff(3)
-                    recon_dir = 2; is1%beg = is1%beg + ${SCHEME}$_polyn
-                    is1%end = is1%end - ${SCHEME}$_polyn
-                else
-                    is1 = idwbuff(3); is2 = idwbuff(2); is3 = idwbuff(1)
-                    recon_dir = 3; is1%beg = is1%beg + ${SCHEME}$_polyn
-                    is1%end = is1%end - ${SCHEME}$_polyn
-                end if
 
                 if (n > 0) then
                     if (p > 0) then
                         call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
                                            & iv%beg:iv%end), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:, &
-                                           & iv%beg:iv%end), recon_dir, is1, is2, is3)
+                                           & iv%beg:iv%end), norm_dir)
                     else
                         call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
-                                           & :), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,:), recon_dir, &
-                                           & is1, is2, is3)
+                                           & :), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,:), norm_dir)
                     end if
                 else
                     call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,:), vL_z(:,:,:,:), vR_x(:,:,:, &
-                                       & iv%beg:iv%end), vR_y(:,:,:,:), vR_z(:,:,:,:), recon_dir, is1, is2, is3)
+                                       & iv%beg:iv%end), vR_y(:,:,:,:), vR_z(:,:,:,:), norm_dir)
                 end if
             end if
         #:endfor
@@ -1655,74 +1640,36 @@ contains
     !> Perform first-order (piecewise constant) reconstruction of left and right cell-boundary values
     subroutine s_reconstruct_cell_boundary_values_first_order(v_vf, vL_x, vL_y, vL_z, vR_x, vR_y, vR_z, norm_dir)
 
-        type(scalar_field), dimension(iv%beg:iv%end), intent(in) :: v_vf
+        type(scalar_field), dimension(iv%beg:iv%end), intent(in)                               :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_x, vL_y, vL_z
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vR_x, vR_y, vR_z
-        integer, intent(in) :: norm_dir
-        integer :: recon_dir  !< Coordinate direction of the WENO reconstruction
-        integer :: i, j, k, l
+        integer, intent(in)                                                                    :: norm_dir
+        integer                                                                                :: i, j, k, l
         ! Reconstruction in s1-direction
+
+        $:GPU_UPDATE(device='[iv]')
 
         #:for SCHEME, TYPE in [('weno','WENO_TYPE'), ('muscl', 'MUSCL_TYPE')]
             if (recon_type == ${TYPE}$ .or. dummy) then
-                if (norm_dir == 1) then
-                    is1 = idwbuff(1); is2 = idwbuff(2); is3 = idwbuff(3)
-                    recon_dir = 1; is1%beg = is1%beg + ${SCHEME}$_polyn
-                    is1%end = is1%end - ${SCHEME}$_polyn
-                else if (norm_dir == 2) then
-                    is1 = idwbuff(2); is2 = idwbuff(1); is3 = idwbuff(3)
-                    recon_dir = 2; is1%beg = is1%beg + ${SCHEME}$_polyn
-                    is1%end = is1%end - ${SCHEME}$_polyn
-                else
-                    is1 = idwbuff(3); is2 = idwbuff(2); is3 = idwbuff(1)
-                    recon_dir = 3; is1%beg = is1%beg + ${SCHEME}$_polyn
-                    is1%end = is1%end - ${SCHEME}$_polyn
-                end if
-
-                $:GPU_UPDATE(device='[is1, is2, is3, iv]')
+                #:for RECON_DIR, XYZ, X_BND_OFFS, Y_BND_OFFS, Z_BND_OFFS in &
+                [(1, 'x', f'{SCHEME}_polyn', '0', '0'), &
+                 (2, 'y', '0', f'{SCHEME}_polyn', '0'), &
+                 (3, 'z', '0', '0', f'{SCHEME}_polyn')]
+                    $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=4)
+                    do i = iv%beg, iv%end
+                        do l = idwbuff(3)%beg + ${Z_BND_OFFS}$, idwbuff(3)%end - ${Z_BND_OFFS}$
+                            do k = idwbuff(2)%beg + ${Y_BND_OFFS}$, idwbuff(2)%end - ${Y_BND_OFFS}$
+                                do j = idwbuff(1)%beg + ${X_BND_OFFS}$, idwbuff(1)%end - ${X_BND_OFFS}$
+                                    vL_${XYZ}$(j, k, l, i) = v_vf(i)%sf(j, k, l)
+                                    vR_${XYZ}$(j, k, l, i) = v_vf(i)%sf(j, k, l)
+                                end do
+                            end do
+                        end do
+                    end do
+                    $:END_GPU_PARALLEL_LOOP()
+                #:endfor
             end if
         #:endfor
-
-        if (recon_dir == 1) then
-            $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=4)
-            do i = iv%beg, iv%end
-                do l = is3%beg, is3%end
-                    do k = is2%beg, is2%end
-                        do j = is1%beg, is1%end
-                            vL_x(j, k, l, i) = v_vf(i)%sf(j, k, l)
-                            vR_x(j, k, l, i) = v_vf(i)%sf(j, k, l)
-                        end do
-                    end do
-                end do
-            end do
-            $:END_GPU_PARALLEL_LOOP()
-        else if (recon_dir == 2) then
-            $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=4)
-            do i = iv%beg, iv%end
-                do l = is3%beg, is3%end
-                    do k = is2%beg, is2%end
-                        do j = is1%beg, is1%end
-                            vL_y(j, k, l, i) = v_vf(i)%sf(k, j, l)
-                            vR_y(j, k, l, i) = v_vf(i)%sf(k, j, l)
-                        end do
-                    end do
-                end do
-            end do
-            $:END_GPU_PARALLEL_LOOP()
-        else if (recon_dir == 3) then
-            $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=4)
-            do i = iv%beg, iv%end
-                do l = is3%beg, is3%end
-                    do k = is2%beg, is2%end
-                        do j = is1%beg, is1%end
-                            vL_z(j, k, l, i) = v_vf(i)%sf(l, k, j)
-                            vR_z(j, k, l, i) = v_vf(i)%sf(l, k, j)
-                        end do
-                    end do
-                end do
-            end do
-            $:END_GPU_PARALLEL_LOOP()
-        end if
 
     end subroutine s_reconstruct_cell_boundary_values_first_order
 
