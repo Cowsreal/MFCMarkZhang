@@ -879,20 +879,19 @@ contains
                 end if
 
                 $:GPU_UPDATE(device='[is1_viscous, is2_viscous, is3_viscous, iv]')
+                call s_pack_${SCHEME}$_input_arr(v_vf)
                 if (n > 0) then
                     if (p > 0) then
-                        call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
-                                           & iv%beg:iv%end), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:, &
-                                           & iv%beg:iv%end), recon_dir, is1_viscous, is2_viscous, is3_viscous)
+                        call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:,iv%beg:iv%end), &
+                                           & vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,iv%beg:iv%end), &
+                                           & recon_dir)
                     else
-                        call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
-                                           & :), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,:), recon_dir, &
-                                           & is1_viscous, is2_viscous, is3_viscous)
+                        call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:,:), vR_x(:,:,:, &
+                                           & iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,:), recon_dir)
                     end if
                 else
-                    call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,:), vL_z(:,:,:,:), vR_x(:,:,:, &
-                                       & iv%beg:iv%end), vR_y(:,:,:,:), vR_z(:,:,:,:), recon_dir, is1_viscous, is2_viscous, &
-                                       & is3_viscous)
+                    call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,:), vL_z(:,:,:,:), vR_x(:,:,:,iv%beg:iv%end), vR_y(:, &
+                                       & :,:,:), vR_z(:,:,:,:), recon_dir)
                 end if
             end if
         #:endfor
@@ -975,20 +974,19 @@ contains
                     is1_viscous%end = is1_viscous%end - ${SCHEME}$_polyn
                 end if
                 $:GPU_UPDATE(device='[is1_viscous, is2_viscous, is3_viscous, iv]')
+                call s_pack_${SCHEME}$_input_arr(v_vf)
                 if (n > 0) then
                     if (p > 0) then
-                        call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
-                                           & iv%beg:iv%end), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:, &
-                                           & iv%beg:iv%end), recon_dir, is1_viscous, is2_viscous, is3_viscous)
+                        call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:,iv%beg:iv%end), &
+                                           & vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,iv%beg:iv%end), &
+                                           & recon_dir)
                     else
-                        call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
-                                           & :), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,:), recon_dir, &
-                                           & is1_viscous, is2_viscous, is3_viscous)
+                        call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:,:), vR_x(:,:,:, &
+                                           & iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,:), recon_dir)
                     end if
                 else
-                    call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,:), vL_z(:,:,:,:), vR_x(:,:,:, &
-                                       & iv%beg:iv%end), vR_y(:,:,:,:), vR_z(:,:,:,:), recon_dir, is1_viscous, is2_viscous, &
-                                       & is3_viscous)
+                    call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,:), vL_z(:,:,:,:), vR_x(:,:,:,iv%beg:iv%end), vR_y(:, &
+                                       & :,:,:), vR_z(:,:,:,:), recon_dir)
                 end if
             end if
         #:endfor

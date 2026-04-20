@@ -43,17 +43,20 @@ contains
     !> Allocate and initialize MUSCL reconstruction working arrays
     subroutine s_initialize_muscl_module()
 
-        @:ALLOCATE(v_rs_muscl(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end, 1:sys_size))
+        @:ALLOCATE(v_rs_muscl(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end, &
+                   & 1:sys_size))
 
     end subroutine s_initialize_muscl_module
 
     subroutine s_pack_muscl_input_arr(v_vf)
 
         type(scalar_field), dimension(1:), intent(in) :: v_vf
-        integer                                       :: i, j, k, l
+        integer                                       :: i, j, k, l, n_vars
+
+        n_vars = size(v_vf)
 
         $:GPU_PARALLEL_LOOP(collapse=4)
-        do i = 1, sys_size
+        do i = 1, n_vars
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
                     do j = idwbuff(1)%beg, idwbuff(1)%end
@@ -71,12 +74,12 @@ contains
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x, vL_rs_vf_y, &
              & vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z
-        integer, intent(in)               :: muscl_dir
-        integer                           :: j, k, l, i
-        real(wp)                          :: slopeL, slopeR, slope
-        real(wp)                          :: v0
+        integer, intent(in) :: muscl_dir
+        integer             :: j, k, l, i
+        real(wp)            :: slopeL, slopeR, slope
+        real(wp)            :: v0
 
-        v_size = ubound(vL_rs_vf_x, 1)
+        v_size = ubound(vL_rs_vf_x, 4)
         $:GPU_UPDATE(device='[v_size]')
 
         if (muscl_order == 1 .or. dummy) then
@@ -85,8 +88,8 @@ contains
                 do l = idwbuff(3)%beg, idwbuff(3)%end
                     do k = idwbuff(2)%beg, idwbuff(2)%end
                         do j = idwbuff(1)%beg, idwbuff(1)%end
-                            vL_rs_x(j, k, l, i) = v_rs_muscl(j, k, l, i)
-                            vR_rs_x(j, k, l, i) = v_rs_muscl(j, k, l, i)
+                            vL_rs_vf_x(j, k, l, i) = v_rs_muscl(j, k, l, i)
+                            vR_rs_vf_x(j, k, l, i) = v_rs_muscl(j, k, l, i)
                         end do
                     end do
                 end do
@@ -156,10 +159,8 @@ contains
         end if
 
         !> :TODO Apply the same NO RESHAPE changes to MUSCL before uncommenting this
-        !if (int_comp) then
-        !    call s_interface_compression(vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, muscl_dir, &
-        !                                 & is1_muscl_d, is2_muscl_d, is3_muscl_d)
-        !end if
+        ! if (int_comp) then call s_interface_compression(vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z,
+        ! muscl_dir, & & is1_muscl_d, is2_muscl_d, is3_muscl_d) end if
 
     end subroutine s_muscl
 
@@ -239,7 +240,7 @@ contains
     subroutine s_finalize_muscl_module()
 
         @:DEALLOCATE(v_rs_muscl)
- 
+
     end subroutine s_finalize_muscl_module
 
 end module m_muscl
