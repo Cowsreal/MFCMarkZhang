@@ -615,11 +615,17 @@ contains
         end if
 
         ! Loop over coordinate directions for dimensional splitting
-        if (recon_type == WENO_TYPE .or. dummy) then
-            call nvtxStartRange("WENO-VARIABLE-PACK")
-            call s_pack_weno_input_arr(q_prim_qp%vf(1:sys_size))
+
+        if (.not. igr .or. dummy) then
+            call nvtxStartRange("RHS-VARIABLE-PACK")
+            if (recon_type == WENO_TYPE) then
+                call s_pack_weno_input_arr(q_prim_qp%vf(1:sys_size)) !< WENO
+            else
+                call s_pack_muscl_input_arr(q_prim_qp%vf(1:sys_size)) !< MUSCL
+            end if
             call nvtxEndRange
         end if
+
         do id = 1, num_dims
             if (igr .or. dummy) then
                 if (id == 1) then
@@ -659,21 +665,21 @@ contains
                     if (all(Re_size == 0)) then
                         ! Reconstruct densitiess
                         iv%beg = 1; iv%end = sys_size
-                        call s_reconstruct_cell_boundary_values(q_prim_qp%vf(1:sys_size), qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
+                        call s_reconstruct_cell_boundary_values(qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                                                                 & qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
                     else
                         iv%beg = 1; iv%end = eqn_idx%cont%end
-                        call s_reconstruct_cell_boundary_values(q_prim_qp%vf(iv%beg:iv%end), qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
+                        call s_reconstruct_cell_boundary_values(qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                                                                 & qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
 
                         iv%beg = eqn_idx%E; iv%end = sys_size
-                        call s_reconstruct_cell_boundary_values(q_prim_qp%vf(iv%beg:iv%end), qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
+                        call s_reconstruct_cell_boundary_values(qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                                                                 & qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
                     end if
                 else
                     if (all(Re_size == 0)) then
                         iv%beg = 1; iv%end = eqn_idx%E - 1
-                        call s_reconstruct_cell_boundary_values(q_prim_qp%vf(iv%beg:iv%end), qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
+                        call s_reconstruct_cell_boundary_values(qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                                                                 & qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
 
                         iv%beg = eqn_idx%E; iv%end = eqn_idx%E
@@ -681,11 +687,11 @@ contains
                             & qL_rsz_vf, qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
 
                         iv%beg = eqn_idx%E + 1; iv%end = sys_size
-                        call s_reconstruct_cell_boundary_values(q_prim_qp%vf(iv%beg:iv%end), qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
+                        call s_reconstruct_cell_boundary_values(qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                                                                 & qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
                     else
                         iv%beg = 1; iv%end = eqn_idx%cont%end
-                        call s_reconstruct_cell_boundary_values(q_prim_qp%vf(iv%beg:iv%end), qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
+                        call s_reconstruct_cell_boundary_values(qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                                                                 & qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
 
                         iv%beg = eqn_idx%E; iv%end = eqn_idx%E
@@ -693,7 +699,7 @@ contains
                             & qL_rsz_vf, qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
 
                         iv%beg = eqn_idx%E + 1; iv%end = sys_size
-                        call s_reconstruct_cell_boundary_values(q_prim_qp%vf(iv%beg:iv%end), qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
+                        call s_reconstruct_cell_boundary_values(qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                                                                 & qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, id)
                     end if
                 end if
@@ -729,6 +735,7 @@ contains
                     irx%beg = 0; iry%beg = 0; irz%beg = -1
                 end if
                 irx%end = m; iry%end = n; irz%end = p
+
                 ! Computing Riemann Solver Flux and Source Flux
                 call nvtxStartRange("RHS-RIEMANN-SOLVER")
                 call s_riemann_solver(qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, dqR_prim_dx_n(id)%vf, dqR_prim_dy_n(id)%vf, &
@@ -1607,9 +1614,8 @@ contains
     end subroutine s_compute_additional_physics_rhs
 
     !> Reconstruct left and right cell-boundary values from cell-averaged variables
-    subroutine s_reconstruct_cell_boundary_values(v_vf, vL_x, vL_y, vL_z, vR_x, vR_y, vR_z, norm_dir)
+    subroutine s_reconstruct_cell_boundary_values(vL_x, vL_y, vL_z, vR_x, vR_y, vR_z, norm_dir)
 
-        type(scalar_field), dimension(iv%beg:iv%end), intent(in)                               :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_x, vL_y, vL_z
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vR_x, vR_y, vR_z
         integer, intent(in)                                                                    :: norm_dir
@@ -1621,15 +1627,15 @@ contains
 
                 if (n > 0) then
                     if (p > 0) then
-                        call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
+                        call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
                                            & iv%beg:iv%end), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:, &
                                            & iv%beg:iv%end), norm_dir)
                     else
-                        call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
+                        call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,iv%beg:iv%end), vL_z(:,:,:, &
                                            & :), vR_x(:,:,:,iv%beg:iv%end), vR_y(:,:,:,iv%beg:iv%end), vR_z(:,:,:,:), norm_dir)
                     end if
                 else
-                    call s_${SCHEME}$ (v_vf(iv%beg:iv%end), vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,:), vL_z(:,:,:,:), vR_x(:,:,:, &
+                    call s_${SCHEME}$ (vL_x(:,:,:,iv%beg:iv%end), vL_y(:,:,:,:), vL_z(:,:,:,:), vR_x(:,:,:, &
                                        & iv%beg:iv%end), vR_y(:,:,:,:), vR_z(:,:,:,:), norm_dir)
                 end if
             end if

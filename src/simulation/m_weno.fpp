@@ -18,8 +18,8 @@ module m_weno
 
     ! WENO Coefficients
     !
-    real(wp), allocatable, dimension(:,:,:,:) :: v_rs
-    $:GPU_DECLARE(create='[v_rs]')
+    real(wp), allocatable, dimension(:,:,:,:) :: v_rs_weno
+    $:GPU_DECLARE(create='[v_rs_weno]')
 
     !> @name Polynomial coefficients at the left and right cell-boundaries (CB) and at the left and right quadrature points (QP), in
     !! the x-, y- and z-directions. Note that the first dimension of the array identifies the polynomial, the second dimension
@@ -64,15 +64,6 @@ module m_weno
     integer :: v_size  !< Number of WENO-reconstructed cell-average variables
     $:GPU_DECLARE(create='[v_size]')
 
-    !> @name Indical bounds in the s1-, s2- and s3-directions
-    !> @{
-    type(int_bounds_info) :: is1_weno, is2_weno, is3_weno
-#ifndef __NVCOMPILER_GPU_UNIFIED_MEM
-    $:GPU_DECLARE(create='[is1_weno, is2_weno, is3_weno]')
-#endif
-    !
-    !> @}
-
 contains
 
     !> Initialize the WENO module
@@ -80,81 +71,22 @@ contains
 
         if (weno_order == 1) return
 
-        ! Allocating/Computing WENO Coefficients in x-direction
-        is1_weno%beg = -buff_size; is1_weno%end = m - is1_weno%beg
-        if (n == 0) then
-            is2_weno%beg = 0
-        else
-            is2_weno%beg = -buff_size
-        end if
+        @:ALLOCATE(v_rs_weno(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end, 1:sys_size))
 
-        is2_weno%end = n - is2_weno%beg
+        ! Allocate coefficient arrays in each direction
+        #:for WENO_DIR, XYZ in [(1, 'x'), (2, 'y'), (3, 'z')]
+            if (${WENO_DIR}$ == 1 .or. (${WENO_DIR}$ == 2 .and. n > 0) .or. (${WENO_DIR}$ == 3 .and. p > 0)) then
+                @:ALLOCATE(poly_coef_cbL_${XYZ}$(idwbuff(${WENO_DIR}$)%beg + weno_polyn:idwbuff(${WENO_DIR}$)%end - weno_polyn, 0:weno_polyn, 0:weno_polyn - 1))
+                @:ALLOCATE(poly_coef_cbR_${XYZ}$(idwbuff(${WENO_DIR}$)%beg + weno_polyn:idwbuff(${WENO_DIR}$)%end - weno_polyn, 0:weno_polyn, 0:weno_polyn - 1))
 
-        if (p == 0) then
-            is3_weno%beg = 0
-        else
-            is3_weno%beg = -buff_size
-        end if
+                @:ALLOCATE(d_cbL_${XYZ}$(0:weno_num_stencils, idwbuff(${WENO_DIR}$)%beg + weno_polyn:idwbuff(${WENO_DIR}$)%end - weno_polyn))
+                @:ALLOCATE(d_cbR_${XYZ}$(0:weno_num_stencils, idwbuff(${WENO_DIR}$)%beg + weno_polyn:idwbuff(${WENO_DIR}$)%end - weno_polyn))
 
-        is3_weno%end = p - is3_weno%beg
-
-        @:ALLOCATE(poly_coef_cbL_x(is1_weno%beg + weno_polyn:is1_weno%end - weno_polyn, 0:weno_polyn, 0:weno_polyn - 1))
-        @:ALLOCATE(poly_coef_cbR_x(is1_weno%beg + weno_polyn:is1_weno%end - weno_polyn, 0:weno_polyn, 0:weno_polyn - 1))
-
-        @:ALLOCATE(d_cbL_x(0:weno_num_stencils, is1_weno%beg + weno_polyn:is1_weno%end - weno_polyn))
-        @:ALLOCATE(d_cbR_x(0:weno_num_stencils, is1_weno%beg + weno_polyn:is1_weno%end - weno_polyn))
-
-        @:ALLOCATE(beta_coef_x(is1_weno%beg + weno_polyn:is1_weno%end - weno_polyn, 0:weno_polyn, &
-                   & 0:weno_polyn*(weno_polyn + 1)/2 - 1))
-        ! Number of cross terms for dvd = (k-1)(k-1+1)/2, where weno_polyn = k-1 Note: k-1 not k because we are using value
-        ! differences (dvd) not the values themselves
-
-        @:ALLOCATE(v_rs(is1_weno%beg:is1_weno%end, is2_weno%beg:is2_weno%end, is3_weno%beg:is3_weno%end, 1:sys_size))
-
-        call s_compute_weno_coefficients(1, is1_weno)
-
-        ! Allocating/Computing WENO Coefficients in y-direction
-        if (n == 0) return
-
-        is2_weno%beg = -buff_size; is2_weno%end = n - is2_weno%beg
-        is1_weno%beg = -buff_size; is1_weno%end = m - is1_weno%beg
-
-        if (p == 0) then
-            is3_weno%beg = 0
-        else
-            is3_weno%beg = -buff_size
-        end if
-
-        is3_weno%end = p - is3_weno%beg
-
-        @:ALLOCATE(poly_coef_cbL_y(is2_weno%beg + weno_polyn:is2_weno%end - weno_polyn, 0:weno_polyn, 0:weno_polyn - 1))
-        @:ALLOCATE(poly_coef_cbR_y(is2_weno%beg + weno_polyn:is2_weno%end - weno_polyn, 0:weno_polyn, 0:weno_polyn - 1))
-
-        @:ALLOCATE(d_cbL_y(0:weno_num_stencils, is2_weno%beg + weno_polyn:is2_weno%end - weno_polyn))
-        @:ALLOCATE(d_cbR_y(0:weno_num_stencils, is2_weno%beg + weno_polyn:is2_weno%end - weno_polyn))
-
-        @:ALLOCATE(beta_coef_y(is2_weno%beg + weno_polyn:is2_weno%end - weno_polyn, 0:weno_polyn, &
-                   & 0:weno_polyn*(weno_polyn + 1)/2 - 1))
-
-        call s_compute_weno_coefficients(2, is2_weno)
-
-        ! Allocating/Computing WENO Coefficients in z-direction
-        if (p == 0) return
-
-        is2_weno%beg = -buff_size; is2_weno%end = n - is2_weno%beg
-        is1_weno%beg = -buff_size; is1_weno%end = m - is1_weno%beg
-        is3_weno%beg = -buff_size; is3_weno%end = p - is3_weno%beg
-
-        @:ALLOCATE(poly_coef_cbL_z(is3_weno%beg + weno_polyn:is3_weno%end - weno_polyn, 0:weno_polyn, 0:weno_polyn - 1))
-        @:ALLOCATE(poly_coef_cbR_z(is3_weno%beg + weno_polyn:is3_weno%end - weno_polyn, 0:weno_polyn, 0:weno_polyn - 1))
-
-        @:ALLOCATE(d_cbL_z(0:weno_num_stencils, is3_weno%beg + weno_polyn:is3_weno%end - weno_polyn))
-        @:ALLOCATE(d_cbR_z(0:weno_num_stencils, is3_weno%beg + weno_polyn:is3_weno%end - weno_polyn))
-
-        @:ALLOCATE(beta_coef_z(is3_weno%beg + weno_polyn:is3_weno%end - weno_polyn, 0:weno_polyn, &
-                   & 0:weno_polyn*(weno_polyn + 1)/2 - 1))
-
-        call s_compute_weno_coefficients(3, is3_weno)
+                @:ALLOCATE(beta_coef_${XYZ}$(idwbuff(${XYZ}$)%beg + weno_polyn:idwbuff(${XYZ}$)%end - weno_polyn, 0:weno_polyn, &
+                        & 0:weno_polyn*(weno_polyn + 1)/2 - 1))
+                call s_compute_weno_coefficients(${WENO_DIR}$, idwbuff(${WENO_DIR}$))
+            end if
+        #:endfor
 
     end subroutine s_initialize_weno_module
 
@@ -168,7 +100,7 @@ contains
         integer                           :: s
         real(wp), pointer, dimension(:)   :: s_cb => null()  !< Cell-boundary locations in the s-direction
         type(int_bounds_info)             :: bc_s            !< Boundary conditions (BC) in the s-direction
-        integer                           :: i               !< Generic loop iterator
+        integer                           :: i, q               !< Generic loop iterator
         real(wp)                          :: w(1:8)          !< Intermediate var for ideal weights: s_cb across overall stencil
         real(wp)                          :: y(1:4)          !< Intermediate var for poly & beta: diff(s_cb) across sub-stencil
 
@@ -813,6 +745,13 @@ contains
                                                & + 5*y(3)**2*y(4)**2))/(5*(y(1) + y(2))**2*(y(1) + y(2) + y(3))**2*(y(1) + y(2) &
                                                & + y(3) + y(4))**2)
                         end do
+                        ! Reverse coefficients back to proper order
+                        do i = is%beg - 1 + weno_polyn, is%end - 1 - weno_polyn
+                            do q = 0, weno_num_stencils
+                            poly_coef_cbL_${XYZ}$(i + 1, q, :) = poly_coef_cbL_${XYZ}$(i + 1, weno_num_stencils - q, :)
+                            poly_coef_cbR_${XYZ}$(i + 1, q, :) = poly_coef_cbR_${XYZ}$(i + 1, weno_num_stencils - q, :)
+                            beta_coef_${XYZ}$(i + 1, :, :) = beta_coef_${XYZ}$(i + 1, weno_num_stencils:0:-1, :)
+                        end do
                     else  ! TENO (only supports uniform grid)
                         ! (Fu, et al., 2016) Table 2 (for right flux)
                         d_cbL_${XYZ}$ (0,:) = 18._wp/35._wp
@@ -855,7 +794,7 @@ contains
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
                     do j = idwbuff(1)%beg, idwbuff(1)%end
-                        v_rs(j, k, l, i) = v_vf(i)%sf(j, k, l)
+                        v_rs_weno(j, k, l, i) = v_vf(i)%sf(j, k, l)
                     end do
                 end do
             end do
@@ -865,13 +804,12 @@ contains
     end subroutine s_pack_weno_input_arr
 
     !> Perform WENO reconstruction of left and right cell-boundary values from cell-averaged variables
-    subroutine s_weno(v_vf, vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, weno_dir)
+    subroutine s_weno(vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, weno_dir)
 
-        type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
+        integer :: v_size
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z
         integer, intent(in)                                                                    :: weno_dir
-        type(int_bounds_info), intent(in)                                                      :: is1_weno_d, is2_weno_d, is3_weno_d
 
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
             real(wp), dimension(-3:2) :: dvd
@@ -895,18 +833,17 @@ contains
         integer                   :: i, j, k, l, q
         real(wp)                  :: vm3, vm2, vm1, v0, vp1, vp2, vp3  !< scalars to store repeatedly accessed stencils
 
-        v_size = ubound(v_vf, 1)
-
+        v_size = ubound(vL_rs_vf_x, 1)
         $:GPU_UPDATE(device='[v_size]')
 
         if (weno_order == 1 .or. dummy) then
             $:GPU_PARALLEL_LOOP(collapse=4)
-            do i = 1, ubound(v_vf, 1)
+            do i = 1, v_size
                 do l = idwbuff(3)%beg, idwbuff(3)%end
                     do k = idwbuff(2)%beg, idwbuff(2)%end
                         do j = idwbuff(1)%beg, idwbuff(1)%end
-                            vL_rs_vf_x(j, k, l, i) = v_vf(i)%sf(j, k, l)
-                            vR_rs_vf_x(j, k, l, i) = v_vf(i)%sf(j, k, l)
+                            vL_rs_vf_x(j, k, l, i) = v_rs_weno(j, k, l, i)
+                            vR_rs_vf_x(j, k, l, i) = v_rs_weno(j, k, l, i)
                         end do
                     end do
                 end do
@@ -914,478 +851,229 @@ contains
             $:END_GPU_PARALLEL_LOOP()
         end if
 
-        if (weno_order == 3 .or. dummy) then
-            #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND_OFFS, Y_BND_OFFS, Z_BND_OFFS in &
-                [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'weno_polyn', '0', '0'), &
-                 (2, 'y', 'k', 'j, {STENCIL_IDX}, l', '0', 'weno_polyn', '0'), &
-                 (3, 'z', 'l', 'j, k, {STENCIL_IDX}', '0', '0', 'weno_polyn')]
-                #:set SV = STENCIL_VAR
-                #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
-                ! For example, in the x direction, expands to SF(' + 1') => 'j + 1, k, l'
-                if (weno_dir == ${WENO_DIR}$) then
-                    $:GPU_PARALLEL_LOOP(collapse=3,private='[beta, inv_beta_sq, dvd, poly, omega, alpha, tau, v0]')
-                    do l = idwbuff(3)%beg + ${Z_BND_OFFS}$, idwbuff(3)%end - ${Z_BND_OFFS}$
-                        do k = idwbuff(2)%beg + ${Y_BND_OFFS}$, idwbuff(2)%end - ${Y_BND_OFFS}$
-                            do j = idwbuff(1)%beg + ${X_BND_OFFS}$, idwbuff(1)%end - ${X_BND_OFFS}$
+        #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND_OFFS, Y_BND_OFFS, Z_BND_OFFS in &
+            [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'weno_polyn', '0', '0'), &
+                (2, 'y', 'k', 'j, {STENCIL_IDX}, l', '0', 'weno_polyn', '0'), &
+                (3, 'z', 'l', 'j, k, {STENCIL_IDX}', '0', '0', 'weno_polyn')]
+            #:set SV = STENCIL_VAR
+            #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
+            ! For example, in the x direction, expands to SF(' + 1') => 'j + 1, k, l'
+            if (weno_dir == ${WENO_DIR}$) then
+                $:GPU_PARALLEL_LOOP(collapse=3,private='[beta, dvd, poly, omega, alpha, tau, vm3, vm2, vm1, v0, &
+                vp1, vp2, vp3, v]')
+                do l = idwbuff(3)%beg + ${Z_BND_OFFS}$, idwbuff(3)%end - ${Z_BND_OFFS}$
+                    do k = idwbuff(2)%beg + ${Y_BND_OFFS}$, idwbuff(2)%end - ${Y_BND_OFFS}$
+                        do j = idwbuff(1)%beg + ${X_BND_OFFS}$, idwbuff(1)%end - ${X_BND_OFFS}$
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do i = 1, v_size
+                                v0 = v_rs_weno(${SF('')}$, i) !< central value for reconstruction
+
+                                ! Get stencil values
+                                if (weno_order == 3 .or. dummy) then
+                                    vm1 = v_rs_weno(${SF(' - 1')}$, i)
+                                    vp1 = v_rs_weno(${SF(' + 1')}$, i)
+                                else if(weno_order == 5) then
+                                #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 1
+                                    vm2 = v_rs_weno(${SF(' - 2')}$, i)
+                                    vp2 = v_rs_weno(${SF(' + 2')}$, i)
+                                #:endif
+                                else if(weno_order == 7) then
+                                #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 2
+                                    vm3 = v_rs_weno(${SF(' - 3')}$, i)
+                                    vp3 = v_rs_weno(${SF(' + 3')}$, i)
+                                #:endif
+                                end if
+
+                                ! Compute betas for each order
+                                if (weno_order == 3 .or. dummy) then
+                                    dvd(0) = v_rs_weno(${SF(' + 1')}$, i) - v0
+                                    dvd(1) = v0 - v_rs_weno(${SF(' - 1')}$, i)
+
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do q = 0, weno_num_stencils
+                                        beta(q) = beta_coef_${XYZ}$ (${SV}$, q, 0)*dvd(q)*dvd(q) + weno_eps
+                                    end do
+
+                                    ! Compute per stencil values weights
+                                    if (wenoz) then
+                                        tau = abs(beta(1) - beta(0))
+                                    end if
+                                else if(weno_order == 5) then
+                                #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 1
+                                    dvd(0) = vp2 - vp1
+                                    dvd(1) = vp1 - v0
+                                    dvd(2) = v0 - vm1
+                                    dvd(3) = vm1 - vm2
+
+                                    ! Compute beta
+                                    
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do q = 0, weno_num_stencils
+                                        beta(q) = beta_coef_${XYZ}$ (${SV}$, q, 0)*dvd(q)*dvd(q) + beta_coef_${XYZ}$ (${SV}$, q, &
+                                            & 1)*dvd(q)*dvd(q+1) + beta_coef_${XYZ}$ (${SV}$, q, 2)*dvd(q + 1)*dvd(q + 1) + weno_eps
+                                    end do
+                                #:endif
+                            else if (weno_order == 7 .or. dummy) then
+                                if (teno)
+                                #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 3
+                                    ! (Fu, et al., 2016) Table 1 Note: Unlike TENO5, TENO7 stencils differ from WENO7
+                                    ! stencils See Figure 2 (right) for right-sided flux (at i+1/2) Here we need the
+                                    ! left-sided flux, so we flip the weights with respect to the x=i point But we need
+                                    ! to keep the stencil order to reuse the beta coefficients
+                                        ! High-Order Low-Dissipation Targeted ENO Schemes for Ideal Magnetohydrodynamics (Fu
+                                        ! & Tang, 2019) Section 3.2
+                                        beta(0) = 13._wp/12._wp*(vm1 - 2._wp*v0 + vp1)**2 + ((vm1 - vp1)**2) &
+                                                & /4._wp + weno_eps
+                                        beta(1) = 13._wp/12._wp*(v0 - 2._wp*vp1 + vp2)**2 + ((3._wp*v0 - 4._wp*vp1 &
+                                                & + vp2)**2)/4._wp + weno_eps
+                                        beta(2) = 13._wp/12._wp*(vm2 - 2._wp*vm1 + v0)**2 + ((vm2 - 4._wp*vm1 &
+                                                & + 3._wp*v0)**2)/4._wp + weno_eps
+
+                                        beta(3) = (v0*(2107._wp*v0 - 9402._wp*vp1 + 7042._wp*v(2) - 1854._wp*vp3) &
+                                                & + vp1*(11003._wp*vp1 - 17246._wp*vp2 + 4642._wp*vp3) + vp2 &
+                                                & *(7043._wp*vp2 - 3882._wp*vp3) + vp3*(547._wp*vp3))/240._wp + weno_eps
+
+                                        beta(4) = (vm3*(547._wp*vm3 - 3882._wp*vm2 + 4642._wp*vm1 - 1854._wp*v0) &
+                                                & + vm2*(7043._wp*vm2 - 17246._wp*vm1 + 7042._wp*v0) + vm1 &
+                                                & *(11003._wp*vm1 - 9402._wp*v0) + v0*(2107._wp*v0))/240._wp + weno_eps
+
+                                        poly(0) = (2._wp*vm1 + 5._wp*v0 - 1._wp*vp1)/6._wp
+                                        poly(1) = (11._wp*v0 - 7._wp*vp1 + 2._wp*vp2)/6._wp
+                                        poly(2) = (-1._wp*vm2 + 5._wp*vm1 + 2._wp*v0)/6._wp
+                                        poly(3) = (25._wp*v0 - 23._wp*vp1 + 13._wp*vp2 - 3._wp*vp3)/12._wp
+                                        poly(4) = (1._wp*vm3 - 5._wp*vm2 + 13._wp*vm1 + 3._wp*v0)/12._wp
+                                #:endif
+                                end if
+                                        dvd(0) = vp3 - vp2
+                                        dvd(1) = vp2 - vp1
+                                        dvd(2) = vp1 - v0
+                                        dvd(3) = v0 - vm1
+                                        dvd(4) = vm1 - vm2
+                                        dvd(5) = vm2 - vm3
+
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do q = 0, weno_num_stencils
+                                            beta(q) = beta_coef_${XYZ}$ (${SV}$, q, 0)*dvd(q)*dvd(q) + beta_coef_${XYZ}$ (${SV}$, q, &
+                                                & 1)*dvd(q)*dvd(q+1) + beta_coef_${XYZ}$ (${SV}$, q, 2)*dvd(q)*dvd(q + 2) &
+                                                + beta_coef_${XYZ}$ (${SV}$, q, &
+                                                & 3)*dvd(q + 1)*dvd(q + 1) + beta_coef_${XYZ}$ (${SV}$, q, 4)*dvd(q + 1)*dvd(q + 2) &
+                                                + beta_coef_${XYZ}$ (${SV}$, q, 5)*dvd(q + 2)*dvd(q + 2) + weno_eps
+                                        end do
+                                        if (wenoz) then
+                                            tau = abs(beta(3) - beta(0))  ! Equation 25
+                                        end if
+                            end if
+                                ! Compute per stencil values weights
+                                if(wenoz .or. teno) then
+                                    if (weno_order == 7 .and. teno) then
+                                    #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 3
+                                        tau = abs(beta(4) - beta(3))  ! Equation 25
+                                    #:endif
+                                    else
+                                        tau = abs(beta(weno_num_stencils) - beta(0))  ! Equation 25
+                                    end if
+                                else if (teno) then
+                                    ! Fu, et al. (2016) Fu''s code: https://dx.doi.org/10.13140/RG.2.2.36250.34247
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do q = 0, weno_num_stencils
+                                        alpha(q) = 1._wp + tau/beta(q)  ! Equation 22 (reuse alpha as gamma; pick C=1 & q=6)
+                                        alpha(q) = alpha(q)**6  ! Equation 22 cont.
+                                    end do
+                                    omega = alpha/sum(alpha)  ! Equation 25 (temporary use omega as xi)
+                                end if
+
+                                ! Deltas
                                 $:GPU_LOOP(parallelism='[seq]')
-                                do i = 1, v_size
-                                    ! reconstruct from left side
-
-                                    v0 = v_rs(${SF('')}$, i)
-
-                                    dvd(0) = v_rs(${SF(' + 1')}$, i) - v0
-                                    dvd(-1) = v0 - v_rs(${SF(' - 1')}$, i)
-
-                                    poly(0) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 0, 0)*dvd(0)
-                                    poly(1) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 1, 0)*dvd(-1)
-
-                                    beta(0) = beta_coef_${XYZ}$ (${SV}$, 0, 0)*dvd(0)*dvd(0) + weno_eps
-                                    beta(1) = beta_coef_${XYZ}$ (${SV}$, 1, 0)*dvd(-1)*dvd(-1) + weno_eps
-
-                                    inv_beta_sq(0) = 1._wp/(beta(0)**2)
-                                    inv_beta_sq(1) = 1._wp/(beta(1)**2)
-
-                                    if (wenojs) then
-                                        alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                    else if (mapped_weno) then
-                                        alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                        omega = alpha/sum(alpha)
-                                        alpha(0:weno_num_stencils) = (d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)*(1._wp + d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$) - 3._wp*omega(0:weno_num_stencils)) + omega(0:weno_num_stencils)**2) &
-                                              & *(omega(0:weno_num_stencils)/(d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)**2 + omega(0:weno_num_stencils)*(1._wp &
-                                              & - 2._wp*d_cbL_${XYZ}$ (0:weno_num_stencils,${SV}$))))
+                                do q = 0, weno_num_stencils
+                                    if (wenojs .or. mapped_weno) then
+                                        delta(q) = 1._wp/beta(q)**2
                                     else if (wenoz) then
                                         ! Borges, et al. (2008)
-
-                                        tau = abs(beta(1) - beta(0))
-                                        alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)*(1._wp + tau/beta(0:weno_num_stencils))
+                                        if (weno_order == 7) then
+                                        #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 2
+                                            delta(q) = (1._wp + tau/beta(q))**wenoz_q ! wenoz_q = 2,3,4 for stability
+                                        #:endif
+                                        else
+                                            delta(q) = 1._wp + tau/beta(q)
+                                        end if
+                                    else if (teno)
+                                    #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 1
+                                        if (omega(q) < teno_CT) then  ! Equation 26
+                                            delta(q) = 0._wp
+                                        else
+                                            delta(q) = 1._wp
+                                        end if
+                                    #:endif
                                     end if
-
-                                    omega = alpha/sum(alpha)
-
-                                    vL_rs_vf_${XYZ}$ (j, k, l, i) = omega(0)*poly(0) + omega(1)*poly(1)
-
-                                    ! reconstruct from right side
-
-                                    poly(0) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 0, 0)*dvd(0)
-                                    poly(1) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 1, 0)*dvd(-1)
-
-                                    if (wenojs) then
-                                        alpha(0:weno_num_stencils) = d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                    else if (mapped_weno) then
-                                        alpha(0:weno_num_stencils) = d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                        omega = alpha/sum(alpha)
-                                        alpha(0:weno_num_stencils) = (d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)*(1._wp + d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$) - 3._wp*omega(0:weno_num_stencils)) + omega(0:weno_num_stencils)**2) &
-                                              & *(omega(0:weno_num_stencils)/(d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)**2 + omega(0:weno_num_stencils)*(1._wp &
-                                              & - 2._wp*d_cbR_${XYZ}$ (0:weno_num_stencils,${SV}$))))
-                                    else if (wenoz) then
-                                        alpha(0:weno_num_stencils) = d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                              & ${SV}$)*(1._wp + tau/beta(0:weno_num_stencils))
-                                    end if
-
-                                    omega = alpha/sum(alpha)
-
-                                    vR_rs_vf_${XYZ}$ (j, k, l, i) = omega(0)*poly(0) + omega(1)*poly(1)
                                 end do
+
+                                #:for LR, CB, V_RS in [('L', 'cbL', 'vL_rs_vf'), ('R', 'cbR', 'vR_rs_vf')]
+
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do q = 0, weno_num_stencils
+                                        if (weno_order == 3 .or. dummy) then
+                                            poly(q) = v0 + poly_coef_${CB}$_${XYZ}$ (${SV}$, q, 0)*dvd(q)
+                                        else if (weno_order == 5 .or. dummy) then
+                                        #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 1
+                                            poly(q) = v0 + poly_coef_${CB}$_${XYZ}$ (${SV}$, q, 0)*dvd(q) &
+                                                        + poly_coef_${CB}$_${XYZ}$ (${SV}$, q, 1)*dvd(q+1)
+                                        #:endif
+                                        else if (weno_order == 7 .or. dummy) then
+                                        #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 2
+                                            poly(q) = v0 + poly_coef_${CB}$_${XYZ}$ (${SV}$, q, 0)*dvd(q) &
+                                                        + poly_coef_${CB}$_${XYZ}$ (${SV}$, q, 1)*dvd(q+1) &
+                                                        + poly_coef_${CB}$_${XYZ}$ (${SV}$, q, 2)*dvd(q+2) &
+                                        #:endif
+                                        end if
+                                        alpha(q) = delta(q)*d_${CB}$_${XYZ}$ (q, ${SV}$)
+                                    end do
+
+                                    omega = alpha/sum(alpha)
+
+                                    ! If mapped weno, remap weights
+                                    if (mapped_weno) then
+                                        do q = 0, weno_num_stencils
+                                            alpha(q) = (d_${CB}$_${XYZ}$ (q, ${SV}$)*(1._wp + d_${CB}$_${XYZ}$ (q, ${SV}$) - 3._wp*omega(q)) + omega(q)**2) &
+                                                & *(omega(q)/(d_${CB}$_${XYZ}$ (q, ${SV}$)**2 + omega(q)*(1._wp - 2._wp*d_${CB}$_${XYZ}$ (q, ${SV}$))))
+                                        end do
+                                    end if
+
+                                    do q = 0, weno_num_stencils
+                                        ${V_RS}$_${XYZ}$ (j, k, l, i) = omega(q)*poly(q) + omega(q)*poly(q)
+                                    end if
+                                #:endfor
                             end do
                         end do
                     end do
-                    $:END_GPU_PARALLEL_LOOP()
+                end do
+                $:END_GPU_PARALLEL_LOOP()
+                if (weno_order == 5 .or. dummy) then
+                    #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 1
+                    call s_preserve_monotonicity_${XYZ}$(vL_rs_vf_${XYZ}$, vR_rs_vf_${XYZ}$)
+                    #:endif
                 end if
-            #:endfor
-        end if
-        if (weno_order == 5 .or. dummy) then
-            #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 1
-                #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND_OFFS, Y_BND_OFFS, Z_BND_OFFS in &
-                    [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'weno_polyn', '0', '0'), &
-                     (2, 'y', 'k', 'j, {STENCIL_IDX}, l', '0', 'weno_polyn', '0'), &
-                     (3, 'z', 'l', 'j, k, {STENCIL_IDX}', '0', '0', 'weno_polyn')]
-                    #:set SV = STENCIL_VAR
-                    #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
-                    if (weno_dir == ${WENO_DIR}$) then
-                        $:GPU_PARALLEL_LOOP(collapse=3, private='[dvd, poly, beta, inv_beta_sq, alpha, omega, tau, delta, q, vm2, &
-                                            & vm1, v0, vp1, vp2]')
-                        do l = idwbuff(3)%beg + ${Z_BND_OFFS}$, idwbuff(3)%end - ${Z_BND_OFFS}$
-                            do k = idwbuff(2)%beg + ${Y_BND_OFFS}$, idwbuff(2)%end - ${Y_BND_OFFS}$
-                                do j = idwbuff(1)%beg + ${X_BND_OFFS}$, idwbuff(1)%end - ${X_BND_OFFS}$
-                                    $:GPU_LOOP(parallelism='[seq]')
-                                    do i = 1, v_size
-                                        ! reconstruct from left side
-
-                                        vm2 = v_rs(${SF(' - 2')}$, i)
-                                        vm1 = v_rs(${SF(' - 1')}$, i)
-                                        v0 = v_rs(${SF('')}$, i)
-                                        vp1 = v_rs(${SF(' + 1')}$, i)
-                                        vp2 = v_rs(${SF(' + 2')}$, i)
-
-                                        dvd(1) = vp2 - vp1
-                                        dvd(0) = vp1 - v0
-                                        dvd(-1) = v0 - vm1
-                                        dvd(-2) = vm1 - vm2
-
-                                        poly(0) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 0, &
-                                             & 0)*dvd(1) + poly_coef_cbL_${XYZ}$ (${SV}$, 0, 1)*dvd(0)
-                                        poly(1) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 1, &
-                                             & 0)*dvd(0) + poly_coef_cbL_${XYZ}$ (${SV}$, 1, 1)*dvd(-1)
-                                        poly(2) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 2, &
-                                             & 0)*dvd(-1) + poly_coef_cbL_${XYZ}$ (${SV}$, 2, 1)*dvd(-2)
-
-                                        beta(0) = beta_coef_${XYZ}$ (${SV}$, 0, 0)*dvd(1)*dvd(1) + beta_coef_${XYZ}$ (${SV}$, 0, &
-                                             & 1)*dvd(1)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, 0, 2)*dvd(0)*dvd(0) + weno_eps
-                                        beta(1) = beta_coef_${XYZ}$ (${SV}$, 1, 0)*dvd(0)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, 1, &
-                                             & 1)*dvd(0)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, 1, 2)*dvd(-1)*dvd(-1) + weno_eps
-                                        beta(2) = beta_coef_${XYZ}$ (${SV}$, 2, 0)*dvd(-1)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, &
-                                             & 2, 1)*dvd(-1)*dvd(-2) + beta_coef_${XYZ}$ (${SV}$, 2, 2)*dvd(-2)*dvd(-2) + weno_eps
-
-                                        inv_beta_sq(0) = 1._wp/(beta(0)**2)
-                                        inv_beta_sq(1) = 1._wp/(beta(1)**2)
-                                        inv_beta_sq(2) = 1._wp/(beta(2)**2)
-
-                                        if (wenojs) then
-                                            alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                        else if (mapped_weno) then
-                                            alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                            omega = alpha/sum(alpha)
-                                            alpha(0:weno_num_stencils) = (d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*(1._wp + d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$) - 3._wp*omega(0:weno_num_stencils)) + omega(0:weno_num_stencils)**2) &
-                                                  & *(omega(0:weno_num_stencils)/(d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)**2 + omega(0:weno_num_stencils)*(1._wp &
-                                                  & - 2._wp*d_cbL_${XYZ}$ (0:weno_num_stencils,${SV}$))))
-                                        else if (wenoz) then
-                                            ! Borges, et al. (2008)
-
-                                            tau = abs(beta(2) - beta(0))  ! Equation 25
-                                            $:GPU_LOOP(parallelism='[seq]')
-                                            do q = 0, weno_num_stencils
-                                                alpha(q) = d_cbL_${XYZ}$ (q, ${SV}$)*(1._wp + (tau/beta(q)))
-                                                ! Equation 28 (note: weno_eps was already added to beta)
-                                            end do
-                                        else if (teno) then
-                                            ! Fu, et al. (2016) Fu''s code: https://dx.doi.org/10.13140/RG.2.2.36250.34247
-                                            tau = abs(beta(2) - beta(0))
-                                            $:GPU_LOOP(parallelism='[seq]')
-                                            do q = 0, weno_num_stencils
-                                                alpha(q) = 1._wp + tau/beta(q)  ! Equation 22 (reuse alpha as gamma; pick C=1 & q=6)
-                                                alpha(q) = alpha(q)**6  ! Equation 22 cont.
-                                            end do
-                                            omega = alpha/sum(alpha)  ! Equation 25 (reuse omega as xi)
-
-                                            $:GPU_LOOP(parallelism='[seq]')
-                                            do q = 0, weno_num_stencils
-                                                if (omega(q) < teno_CT) then  ! Equation 26
-                                                    delta(q) = 0._wp
-                                                else
-                                                    delta(q) = 1._wp
-                                                end if
-                                                alpha(q) = delta(q)*d_cbL_${XYZ}$ (q, ${SV}$)  ! Equation 27
-                                            end do
-                                        end if
-
-                                        omega = alpha/sum(alpha)
-                                        vL_rs_vf_${XYZ}$ (j, k, l, i) = omega(0)*poly(0) + omega(1)*poly(1) + omega(2)*poly(2)
-
-                                        ! reconstruct from right side
-
-                                        poly(0) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 0, &
-                                             & 0)*dvd(1) + poly_coef_cbR_${XYZ}$ (${SV}$, 0, 1)*dvd(0)
-                                        poly(1) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 1, &
-                                             & 0)*dvd(0) + poly_coef_cbR_${XYZ}$ (${SV}$, 1, 1)*dvd(-1)
-                                        poly(2) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 2, &
-                                             & 0)*dvd(-1) + poly_coef_cbR_${XYZ}$ (${SV}$, 2, 1)*dvd(-2)
-
-                                        if (wenojs) then
-                                            alpha(0:weno_num_stencils) = d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                        else if (mapped_weno) then
-                                            alpha(0:weno_num_stencils) = d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                            omega = alpha/sum(alpha)
-                                            alpha(0:weno_num_stencils) = (d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*(1._wp + d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$) - 3._wp*omega(0:weno_num_stencils)) + omega(0:weno_num_stencils)**2) &
-                                                  & *(omega(0:weno_num_stencils)/(d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)**2 + omega(0:weno_num_stencils)*(1._wp &
-                                                  & - 2._wp*d_cbR_${XYZ}$ (0:weno_num_stencils,${SV}$))))
-                                        else if (wenoz) then
-                                            $:GPU_LOOP(parallelism='[seq]')
-                                            do q = 0, weno_num_stencils
-                                                alpha(q) = d_cbR_${XYZ}$ (q, ${SV}$)*(1._wp + (tau/beta(q)))
-                                            end do
-                                        else if (teno) then
-                                            $:GPU_LOOP(parallelism='[seq]')
-                                            do q = 0, weno_num_stencils
-                                                alpha(q) = delta(q)*d_cbR_${XYZ}$ (q, ${SV}$)
-                                            end do
-                                        end if
-
-                                        omega = alpha/sum(alpha)
-                                        vR_rs_vf_${XYZ}$ (j, k, l, i) = omega(0)*poly(0) + omega(1)*poly(1) + omega(2)*poly(2)
-                                    end do
-                                end do
-                            end do
-                        end do
-                        $:END_GPU_PARALLEL_LOOP()
-
-                        if (mp_weno) then
-                            call s_preserve_monotonicity_${XYZ}$ (v_vf, vL_rs_vf_${XYZ}$, vR_rs_vf_${XYZ}$)
-                        end if
-                    end if
-                #:endfor
-            #:endif
-        end if
-        if (weno_order == 7 .or. dummy) then
-            #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 2
-                #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND_OFFS, Y_BND_OFFS, Z_BND_OFFS in &
-                    [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'weno_polyn', '0', '0'), &
-                     (2, 'y', 'k', 'j, {STENCIL_IDX}, l', '0', 'weno_polyn', '0'), &
-                     (3, 'z', 'l', 'j, k, {STENCIL_IDX}', '0', '0', 'weno_polyn')]
-                    ! Always loop with j (x) innermost so adjacent warp threads hit contiguous sf memory.
-                    #:set SV = STENCIL_VAR
-                    #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
-                    #:set SF_RANGE = lambda a, b: COORDS.format(STENCIL_IDX = SV + a + ':' + SV + b)
-                    if (weno_dir == ${WENO_DIR}$) then
-                        $:GPU_PARALLEL_LOOP(collapse=3,private='[poly, beta, inv_beta_sq, alpha, omega, tau, delta, dvd, v, q, &
-                                            & vm3, vm2, vm1, v0, vp1, vp2, vp3]')
-                        do l = idwbuff(3)%beg + ${Z_BND_OFFS}$, idwbuff(3)%end - ${Z_BND_OFFS}$
-                            do k = idwbuff(2)%beg + ${Y_BND_OFFS}$, idwbuff(2)%end - ${Y_BND_OFFS}$
-                                do j = idwbuff(1)%beg + ${X_BND_OFFS}$, idwbuff(1)%end - ${X_BND_OFFS}$
-                                    $:GPU_LOOP(parallelism='[seq]')
-                                    do i = 1, v_size
-                                        vm2 = v_rs(${SF(' - 3')}$, i)
-                                        vm2 = v_rs(${SF(' - 2')}$, i)
-                                        vm1 = v_rs(${SF(' - 1')}$, i)
-                                        v0 = v_rs(${SF('')}$, i)
-                                        vp1 = v_rs(${SF(' + 1')}$, i)
-                                        vp2 = v_rs(${SF(' + 2')}$, i)
-                                        vp2 = v_rs(${SF(' + 3')}$, i)
-
-                                        if (teno) v = v_vf(i)%sf(${SF_RANGE(' - 3', &
-                                            & ' + 3')}$)  ! temporary field value array for clarity
-
-                                        if (.not. teno) then
-                                            dvd(2) = vp3 - vp2
-                                            dvd(1) = vp2 - vp1
-                                            dvd(0) = vp1 - v0
-                                            dvd(-1) = v0 - vm1
-                                            dvd(-2) = vm1 - vm2
-                                            dvd(-3) = vm2 - vm3
-
-                                            poly(3) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 0, &
-                                                 & 0)*dvd(2) + poly_coef_cbL_${XYZ}$ (${SV}$, 0, &
-                                                 & 1)*dvd(1) + poly_coef_cbL_${XYZ}$ (${SV}$, 0, 2)*dvd(0)
-                                            poly(2) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 1, &
-                                                 & 0)*dvd(1) + poly_coef_cbL_${XYZ}$ (${SV}$, 1, &
-                                                 & 1)*dvd(0) + poly_coef_cbL_${XYZ}$ (${SV}$, 1, 2)*dvd(-1)
-                                            poly(1) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 2, &
-                                                 & 0)*dvd(0) + poly_coef_cbL_${XYZ}$ (${SV}$, 2, &
-                                                 & 1)*dvd(-1) + poly_coef_cbL_${XYZ}$ (${SV}$, 2, 2)*dvd(-2)
-                                            poly(0) = v0 + poly_coef_cbL_${XYZ}$ (${SV}$, 3, &
-                                                 & 0)*dvd(-1) + poly_coef_cbL_${XYZ}$ (${SV}$, 3, &
-                                                 & 1)*dvd(-2) + poly_coef_cbL_${XYZ}$ (${SV}$, 3, 2)*dvd(-3)
-                                        else
-                                            #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 3
-                                                ! (Fu, et al., 2016) Table 1 Note: Unlike TENO5, TENO7 stencils differ from WENO7
-                                                ! stencils See Figure 2 (right) for right-sided flux (at i+1/2) Here we need the
-                                                ! left-sided flux, so we flip the weights with respect to the x=i point But we need
-                                                ! to keep the stencil order to reuse the beta coefficients
-                                                poly(0) = (2._wp*v(-1) + 5._wp*v(0) - 1._wp*v(1))/6._wp
-                                                poly(1) = (11._wp*v(0) - 7._wp*v(1) + 2._wp*v(2))/6._wp
-                                                poly(2) = (-1._wp*v(-2) + 5._wp*v(-1) + 2._wp*v(0))/6._wp
-                                                poly(3) = (25._wp*v(0) - 23._wp*v(1) + 13._wp*v(2) - 3._wp*v(3))/12._wp
-                                                poly(4) = (1._wp*v(-3) - 5._wp*v(-2) + 13._wp*v(-1) + 3._wp*v(0))/12._wp
-                                            #:endif
-                                        end if
-
-                                        if (.not. teno) then
-                                            beta(3) = beta_coef_${XYZ}$ (${SV}$, 0, 0)*dvd(2)*dvd(2) + beta_coef_${XYZ}$ (${SV}$, &
-                                                 & 0, 1)*dvd(2)*dvd(1) + beta_coef_${XYZ}$ (${SV}$, 0, &
-                                                 & 2)*dvd(2)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, 0, &
-                                                 & 3)*dvd(1)*dvd(1) + beta_coef_${XYZ}$ (${SV}$, 0, &
-                                                 & 4)*dvd(1)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, 0, 5)*dvd(0)*dvd(0) + weno_eps
-
-                                            beta(2) = beta_coef_${XYZ}$ (${SV}$, 1, 0)*dvd(1)*dvd(1) + beta_coef_${XYZ}$ (${SV}$, &
-                                                 & 1, 1)*dvd(1)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, 1, &
-                                                 & 2)*dvd(1)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, 1, &
-                                                 & 3)*dvd(0)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, 1, &
-                                                 & 4)*dvd(0)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, 1, 5)*dvd(-1)*dvd(-1) + weno_eps
-
-                                            beta(1) = beta_coef_${XYZ}$ (${SV}$, 2, 0)*dvd(0)*dvd(0) + beta_coef_${XYZ}$ (${SV}$, &
-                                                 & 2, 1)*dvd(0)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, 2, &
-                                                 & 2)*dvd(0)*dvd(-2) + beta_coef_${XYZ}$ (${SV}$, 2, &
-                                                 & 3)*dvd(-1)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, 2, &
-                                                 & 4)*dvd(-1)*dvd(-2) + beta_coef_${XYZ}$ (${SV}$, 2, 5)*dvd(-2)*dvd(-2) + weno_eps
-
-                                            beta(0) = beta_coef_${XYZ}$ (${SV}$, 3, &
-                                                 & 0)*dvd(-1)*dvd(-1) + beta_coef_${XYZ}$ (${SV}$, 3, &
-                                                 & 1)*dvd(-1)*dvd(-2) + beta_coef_${XYZ}$ (${SV}$, 3, &
-                                                 & 2)*dvd(-1)*dvd(-3) + beta_coef_${XYZ}$ (${SV}$, 3, &
-                                                 & 3)*dvd(-2)*dvd(-2) + beta_coef_${XYZ}$ (${SV}$, 3, &
-                                                 & 4)*dvd(-2)*dvd(-3) + beta_coef_${XYZ}$ (${SV}$, 3, 5)*dvd(-3)*dvd(-3) + weno_eps
-
-                                            inv_beta_sq(0) = 1._wp/(beta(0)**2)
-                                            inv_beta_sq(1) = 1._wp/(beta(1)**2)
-                                            inv_beta_sq(2) = 1._wp/(beta(2)**2)
-                                            inv_beta_sq(3) = 1._wp/(beta(3)**2)
-                                        else  ! TENO
-                                            #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 3
-                                                ! High-Order Low-Dissipation Targeted ENO Schemes for Ideal Magnetohydrodynamics (Fu
-                                                ! & Tang, 2019) Section 3.2
-                                                beta(0) = 13._wp/12._wp*(v(-1) - 2._wp*v(0) + v(1))**2 + ((v(-1) - v(1))**2) &
-                                                     & /4._wp + weno_eps
-                                                beta(1) = 13._wp/12._wp*(v(0) - 2._wp*v(1) + v(2))**2 + ((3._wp*v(0) - 4._wp*v(1) &
-                                                     & + v(2))**2)/4._wp + weno_eps
-                                                beta(2) = 13._wp/12._wp*(v(-2) - 2._wp*v(-1) + v(0))**2 + ((v(-2) - 4._wp*v(-1) &
-                                                     & + 3._wp*v(0))**2)/4._wp + weno_eps
-
-                                                beta(3) = (v(0)*(2107._wp*v(0) - 9402._wp*v(1) + 7042._wp*v(2) - 1854._wp*v(3)) &
-                                                     & + v(1)*(11003._wp*v(1) - 17246._wp*v(2) + 4642._wp*v(3)) + v(2) &
-                                                     & *(7043._wp*v(2) - 3882._wp*v(3)) + v(3)*(547._wp*v(3)))/240._wp + weno_eps
-
-                                                beta(4) = (v(-3)*(547._wp*v(-3) - 3882._wp*v(-2) + 4642._wp*v(-1) - 1854._wp*v(0)) &
-                                                     & + v(-2)*(7043._wp*v(-2) - 17246._wp*v(-1) + 7042._wp*v(0)) + v(-1) &
-                                                     & *(11003._wp*v(-1) - 9402._wp*v(0)) + v(0)*(2107._wp*v(0)))/240._wp + weno_eps
-                                            #:endif
-                                        end if
-
-                                        if (wenojs) then
-                                            alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                        else if (mapped_weno) then
-                                            alpha(0:weno_num_stencils) = d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                            omega = alpha/sum(alpha)
-                                            alpha(0:weno_num_stencils) = (d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*(1._wp + d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$) - 3._wp*omega(0:weno_num_stencils)) + omega(0:weno_num_stencils)**2) &
-                                                  & *(omega(0:weno_num_stencils)/(d_cbL_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)**2 + omega(0:weno_num_stencils)*(1._wp &
-                                                  & - 2._wp*d_cbL_${XYZ}$ (0:weno_num_stencils,${SV}$))))
-                                        else if (wenoz) then
-                                            ! Castro, et al. (2010) Don & Borges (2013) also helps
-                                            tau = abs(beta(3) - beta(0))  ! Equation 50
-                                            $:GPU_LOOP(parallelism='[seq]')
-                                            do q = 0, weno_num_stencils
-                                                alpha(q) = d_cbL_${XYZ}$ (q, &
-                                                      & ${SV}$)*(1._wp + (tau/beta(q))**wenoz_q)  ! wenoz_q = 2,3,4 for stability
-                                            end do
-                                        else if (teno) then
-                                            #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 3
-                                                tau = abs(beta(4) - beta(3))  ! Note the reordering of stencils
-                                                alpha = 1._wp + tau/beta
-                                                alpha = alpha**6  ! Equation 22 cont.
-                                                omega = alpha/sum(alpha)
-
-                                                $:GPU_LOOP(parallelism='[seq]')
-                                                do q = 0, weno_num_stencils
-                                                    if (omega(q) < teno_CT) then  ! Equation 26
-                                                        delta(q) = 0._wp
-                                                    else
-                                                        delta(q) = 1._wp
-                                                    end if
-                                                    alpha(q) = delta(q)*d_cbL_${XYZ}$ (q, ${SV}$)  ! Equation 27
-                                                end do
-                                            #:endif
-                                        end if
-
-                                        omega = alpha/sum(alpha)
-
-                                        vL_rs_vf_${XYZ}$ (j, k, l, &
-                                                          & i) = omega(0)*poly(0) + omega(1)*poly(1) + omega(2)*poly(2) + omega(3) &
-                                                          & *poly(3)
-
-                                        if (teno) then
-                                            #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 3
-                                                vL_rs_vf_${XYZ}$ (j, k, l, i) = vL_rs_vf_${XYZ}$ (j, k, l, i) + omega(4)*poly(4)
-                                            #:endif
-                                        end if
-
-                                        if (.not. teno) then
-                                            poly(3) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 0, &
-                                                 & 0)*dvd(2) + poly_coef_cbR_${XYZ}$ (${SV}$, 0, &
-                                                 & 1)*dvd(1) + poly_coef_cbR_${XYZ}$ (${SV}$, 0, 2)*dvd(0)
-                                            poly(2) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 1, &
-                                                 & 0)*dvd(1) + poly_coef_cbR_${XYZ}$ (${SV}$, 1, &
-                                                 & 1)*dvd(0) + poly_coef_cbR_${XYZ}$ (${SV}$, 1, 2)*dvd(-1)
-                                            poly(1) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 2, &
-                                                 & 0)*dvd(0) + poly_coef_cbR_${XYZ}$ (${SV}$, 2, &
-                                                 & 1)*dvd(-1) + poly_coef_cbR_${XYZ}$ (${SV}$, 2, 2)*dvd(-2)
-                                            poly(0) = v0 + poly_coef_cbR_${XYZ}$ (${SV}$, 3, &
-                                                 & 0)*dvd(-1) + poly_coef_cbR_${XYZ}$ (${SV}$, 3, &
-                                                 & 1)*dvd(-2) + poly_coef_cbR_${XYZ}$ (${SV}$, 3, 2)*dvd(-3)
-                                        else
-                                            #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 3
-                                                poly(0) = (-1._wp*v(-1) + 5._wp*v(0) + 2._wp*v(1))/6._wp
-                                                poly(1) = (2._wp*v(0) + 5._wp*v(1) - 1._wp*v(2))/6._wp
-                                                poly(2) = (2._wp*v(-2) - 7._wp*v(-1) + 11._wp*v(0))/6._wp
-                                                poly(3) = (3._wp*v(0) + 13._wp*v(1) - 5._wp*v(2) + 1._wp*v(3))/12._wp
-                                                poly(4) = (-3._wp*v(-3) + 13._wp*v(-2) - 23._wp*v(-1) + 25._wp*v(0))/12._wp
-                                            #:endif
-                                        end if
-
-                                        if (wenojs) then
-                                            alpha(0:weno_num_stencils) = d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                        else if (mapped_weno) then
-                                            alpha(0:weno_num_stencils) = d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*inv_beta_sq(0:weno_num_stencils)
-                                            omega = alpha/sum(alpha)
-                                            alpha(0:weno_num_stencils) = (d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)*(1._wp + d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$) - 3._wp*omega(0:weno_num_stencils)) + omega(0:weno_num_stencils)**2) &
-                                                  & *(omega(0:weno_num_stencils)/(d_cbR_${XYZ}$ (0:weno_num_stencils, &
-                                                  & ${SV}$)**2 + omega(0:weno_num_stencils)*(1._wp &
-                                                  & - 2._wp*d_cbR_${XYZ}$ (0:weno_num_stencils,${SV}$))))
-                                        else if (wenoz) then
-                                            $:GPU_LOOP(parallelism='[seq]')
-                                            do q = 0, weno_num_stencils
-                                                alpha(q) = d_cbR_${XYZ}$ (q, &
-                                                      & ${SV}$)*(1._wp + (tau/beta(q))**wenoz_q)  ! wenoz_q = 2,3,4 for stability
-                                            end do
-                                        else if (teno) then
-                                            $:GPU_LOOP(parallelism='[seq]')
-                                            do q = 0, weno_num_stencils
-                                                alpha(q) = delta(q)*d_cbR_${XYZ}$ (q, ${SV}$)
-                                            end do
-                                        end if
-
-                                        omega = alpha/sum(alpha)
-
-                                        vR_rs_vf_${XYZ}$ (j, k, l, &
-                                                          & i) = omega(0)*poly(0) + omega(1)*poly(1) + omega(2)*poly(2) + omega(3) &
-                                                          & *poly(3)
-
-                                        if (teno) then
-                                            #:if not MFC_CASE_OPTIMIZATION or weno_num_stencils > 3
-                                                vR_rs_vf_${XYZ}$ (j, k, l, i) = vR_rs_vf_${XYZ}$ (j, k, l, i) + omega(4)*poly(4)
-                                            #:endif
-                                        end if
-                                    end do
-                                end do
-                            end do
-                        end do
-                        $:END_GPU_PARALLEL_LOOP()
-                    end if
-                #:endfor
-            #:endif
-        end if
-
+            end if
+        #:endfor
         ! if (int_comp) then
         !> :TODO Apply the same NO RESHAPE changes to MUSCL before uncommenting this
         ! call s_interface_compression(vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, weno_dir, & &
         ! is1_weno_d, is2_weno_d, is3_weno_d) end if
+
+    ! AJSKDLJASKLDJASKLDJAKLSJDLAKSDFMLAKSMCIXZHOJWQREOHQWUYFAXIZCHOUXYZGVHJRIUPWQNDHABXCOUHXZ
+    ! READ HERE 
+    ! READ HERE
+    ! READ HERE
+    ! ANSCIJXZHCUHOORMNQIBCUYAXBCPIXZMCOIASXPNCIUABSDFUYBWIPQUDNPIOUXZNCUYXZBCUABSUFDONAIOSPCMIUXZNC
+    
+    
+    ! THINC should be moved to the rhs module and called after reconstruction. It is reconstruction agnostic so it should work with
+    ! WENO without much work.
+    ! Currently, there is a guard in the toolkit for WENO + int_comp, so the line above would never be executed. 
+    ! It would call the function in the MUSCL file and read garbage values anyways
+
+
+
+
 
     end subroutine s_weno
 
@@ -1495,27 +1183,17 @@ contains
     !> Module deallocation and/or disassociation procedures
     impure subroutine s_finalize_weno_module()
 
-        @:DEALLOCATE(v_rs)
         if (weno_order == 1) return
 
-        ! Deallocating WENO coefficients in x-direction
-        @:DEALLOCATE(poly_coef_cbL_x, poly_coef_cbR_x)
-        @:DEALLOCATE(d_cbL_x, d_cbR_x)
-        @:DEALLOCATE(beta_coef_x)
+        @:DEALLOCATE(v_rs_weno)
 
-        ! Deallocating WENO coefficients in y-direction
-        if (n == 0) return
-
-        @:DEALLOCATE(poly_coef_cbL_y, poly_coef_cbR_y)
-        @:DEALLOCATE(d_cbL_y, d_cbR_y)
-        @:DEALLOCATE(beta_coef_y)
-
-        ! Deallocating WENO coefficients in z-direction
-        if (p == 0) return
-
-        @:DEALLOCATE(poly_coef_cbL_z, poly_coef_cbR_z)
-        @:DEALLOCATE(d_cbL_z, d_cbR_z)
-        @:DEALLOCATE(beta_coef_z)
+        #:for WENO_DIR, XYZ in [(1, 'x'), (2, 'y'), (3, 'z')]
+            if (${WENO_DIR}$ == 1 .or. (${WENO_DIR}$ == 2 .and. n > 0) .or. (${WENO_DIR}$ == 3 .and. p > 0)) then
+                @:DEALLOCATE(poly_coef_cbL_${XYZ}$, poly_coef_cbR_${XYZ}$)
+                @:DEALLOCATE(d_cbL_${XYZ}$, d_cbR_${XYZ}$)
+                @:DEALLOCATE(beta_coef_${XYZ}$)
+            end if
+        #:endfor
 
     end subroutine s_finalize_weno_module
 
