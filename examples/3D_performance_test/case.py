@@ -33,7 +33,7 @@ print(
             "dt": 0.2e-09 / 1.0e-03,
             "t_step_start": 0,
             "t_step_stop": 30,
-            "t_step_save": 1,
+            "t_step_save": 30,
             # Simulation Algorithm Parameters
             "num_patches": 2,
             "model_eqns": 2,
