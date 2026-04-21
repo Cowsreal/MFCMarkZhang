@@ -6,7 +6,7 @@ print(
     json.dumps(
         {
             # Logistics
-            "run_time_info": "T",
+            "run_time_info": "F",
             # Computational Domain Parameters
             "x_domain%beg": 0.0e00,
             "x_domain%end": 4.0e-03 / 1.0e-03,
@@ -33,7 +33,7 @@ print(
             "dt": 0.2e-09 / 1.0e-03,
             "t_step_start": 0,
             "t_step_stop": 30,
-            "t_step_save": 30,
+            "t_step_save": 1,
             # Simulation Algorithm Parameters
             "num_patches": 2,
             "model_eqns": 2,
@@ -47,7 +47,7 @@ print(
             "weno_Re_flux": "F",
             "weno_avg": "F",
             "avg_state": 2,
-            "mapped_weno": "T",
+            "mapped_weno": "F",
             "null_weights": "F",
             "mp_weno": "F",
             "riemann_solver": 2,

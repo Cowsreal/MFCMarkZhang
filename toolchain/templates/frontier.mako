@@ -62,16 +62,20 @@ ulimit -s unlimited
     % if not mpi:
         (set -x; ${profiler} "${target.get_install_binpath(case)}")
     % else:
-        (set -x; srun --unbuffered \
+        (set -x; \
+        % if target.name == 'simulation':
+            ${profiler} \
+        % endif
+        srun \
         % if engine == 'interactive':
                 --unbuffered --nodes ${nodes} --ntasks-per-node ${tasks_per_node} \
                 --cpus-per-task 7                                    \
             % if gpu_enabled:
                 --gpus-per-task 1 --gpu-bind closest                 \
             % endif
-            ${profiler} "${target.get_install_binpath(case)}")
+            "${target.get_install_binpath(case)}")
         % else:
-            ${profiler} "/mnt/bb/$USER/${target.name}")
+            "/mnt/bb/$USER/${target.name}")
         % endif
     % endif
 

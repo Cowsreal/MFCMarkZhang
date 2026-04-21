@@ -126,10 +126,11 @@ if [ ! -z ${CRAY_LD_LIBRARY_PATH+x} ] && [ "$u_c" '!=' 'c' ] &&  [ "$u_c" '!=' '
 fi
 
 if [ "$u_c" '==' 'famd' ]; then 
-    export OLCF_AFAR_ROOT="/sw/crusher/ums/compilers/afar/rocm-afar-8873-drop-22.2.0"
+    export OLCF_AFAR_ROOT=/sw/crusher/ums/compilers/afar/therock-23.1.0-gfx90a-7.12.0-bb5005b6
 
     export PATH=${OLCF_AFAR_ROOT}/lib/llvm/bin:${PATH}
     export LD_LIBRARY_PATH=${OLCF_AFAR_ROOT}/lib:${OLCF_AFAR_ROOT}/lib/llvm/lib:${LD_LIBRARY_PATH}
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/rocm-7.0.2/lib/llvm/lib:/opt/rocm-7.0.2/lib/
 
     export CRAY_MPICH_INC="-I${OLCF_AFAR_ROOT}/include/mpich3.4a2"
     export CRAY_HIPFORT_INC="-I${OLCF_AFAR_ROOT}/include/hipfort/amdgcn"
@@ -141,6 +142,8 @@ if [ "$u_c" '==' 'famd' ]; then
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${CRAY_LD_LIBRARY_PATH}" 
     export CMAKE_PREFIX_PATH="${OLCF_AFAR_ROOT}:${CMAKE_PREFIX_PATH}"
     export FC="${OLCF_AFAR_ROOT}/bin/amdflang"
+
+    source /sw/crusher/ums/compilers/rocprofiler-compute-dev/7.2.0-20260318/VENV/bin/activate
 
     unset MPICH_GPU_SUPPORT_ENABLED
 fi

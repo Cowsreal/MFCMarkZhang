@@ -636,8 +636,9 @@ exit 0
                     target_compile_options(${a_target} PRIVATE -fopenmp)
                     target_link_options(${a_target} PRIVATE -fopenmp)
                 elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "LLVMFlang")
-                    target_compile_options(${a_target} PRIVATE -fopenmp --offload-arch=gfx90a)
-                    target_link_options(${a_target} PRIVATE -fopenmp --offload-arch=gfx90a)
+		    target_compile_options(${a_target} PRIVATE -fopenmp --offload-arch=gfx90a -fopenmp-target-fast -fopenmp-assume-threads-oversubscription -fopenmp-assume-teams-oversubscription)
+		    #target_compile_options(${a_target} PRIVATE -fopenmp --offload-arch=gfx90a)
+                    target_link_options(${a_target} PRIVATE -fopenmp --offload-arch=gfx90a -flto-partitions=${MFC_BUILD_JOBS})
                 endif()
             endif()
 
@@ -704,7 +705,7 @@ exit 0
                 endif()
 
                 find_package(hipfort COMPONENTS hip CONFIG REQUIRED)
-                target_link_libraries(${a_target} PRIVATE hipfort::hip hipfort::hipfort-amdgcn flang_rt.hostdevice)
+                target_link_libraries(${a_target} PRIVATE hipfort::hip hipfort::hipfort-amdgcn)
             endif()
         elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Cray")
             target_compile_options(${a_target} PRIVATE "SHELL:-h noacc" "SHELL:-x acc")

@@ -52,11 +52,11 @@ def __profiler_prepend() -> typing.List[str]:
         return ["rocprof-compute", "profile", "-n", ARG("name").replace("-", "_").replace(".", "_")] + ARG("rcu") + ["--"]
 
     if ARG("rsys") is not None:
-        if not does_command_exist("rocprof"):
-            raise MFCException("Failed to locate [bold red]ROCM rocprof-systems[/bold red] (rocprof-systems).")
+        if not does_command_exist("rocprofv3"):
+            raise MFCException("Failed to locate [bold red]ROCM rocprofv3[/bold red] (rocprof-systems).")
 
-        return ["rocprof"] + ARG("rsys")
-
+        return ["rocprofv3", "-r", "-f", "csv", "--stats"] + ARG("rsys") + ["--"]
+        #return ["rocprofv3", "--stats"] + ARG("rsys")
     return []
 
 
