@@ -72,7 +72,7 @@ contains
                     call s_check_model_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 6) then
                     call s_check_ellipse_ib_patch_geometry(i)
-else if (patch_ib(i)%geometry == 14) then
+                else if (patch_ib(i)%geometry == 14) then
                     call s_check_circle_ib_patch_geometry(i)
 
                 else
@@ -107,7 +107,7 @@ else if (patch_ib(i)%geometry == 14) then
 
     end subroutine s_check_circle_ib_patch_geometry
 
-        !>  This subroutine verifies that the geometric parameters of
+    !>  This subroutine verifies that the geometric parameters of
         !!      the circular cavity patch have consistently been inputted by the
         !!      user.
         !!  @param patch_id Patch identifier
@@ -127,7 +127,7 @@ else if (patch_ib(i)%geometry == 14) then
 
     end subroutine s_check_circular_shell_ib_patch_geometry
 
-        !>  This subroutine verifies that the geometric parameters of
+    !>  This subroutine verifies that the geometric parameters of
         !!      the circular cavity patch have consistently been inputted by the
         !!      user.
         !!  @param patch_id Patch identifier
@@ -146,7 +146,6 @@ else if (patch_ib(i)%geometry == 14) then
             'in circular cavity IB patch '//trim(iStr))
 
     end subroutine s_check_cylindrical_shell_ib_patch_geometry
-
 
     !>  This subroutine verifies that the geometric parameters of
         !!      the ellipse patch have consistently been inputted by the

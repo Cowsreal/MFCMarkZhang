@@ -330,6 +330,7 @@ module m_derived_types
         real(wp) :: dr_fac
         real(wp) :: pts
         real(wp) :: temp
+        real(wp) :: bound_weight
         integer :: high_order
 
         logical :: hybrid
@@ -378,6 +379,7 @@ module m_derived_types
         real(wp) :: qv      !< reference energy per unit mass for SGEOS, q (see Le Metayer (2004))
         real(wp) :: qvp     !< reference entropy per unit mass for SGEOS, q' (see Le Metayer (2004))
         real(wp) :: G
+        real(wp) :: kap
     end type physical_parameters
 
     !> Derived type annexing the physical parameters required for sub-grid bubble models
@@ -470,12 +472,13 @@ module m_derived_types
         integer, dimension(3) :: DB
         integer :: x_periodicity, y_periodicity, z_periodicity
 
-        integer, dimension(:, :), allocatable :: stencil
-        real(wp), dimension(:), allocatable :: A_neum
-        real(wp), dimension(:), allocatable :: A_dirich
+        integer, dimension(1:100, 1:3) :: stencil
+        real(wp), dimension(1:100) :: A_neum
+        real(wp), dimension(1:100) :: A_dirich
         integer :: M
         real(wp) :: cond
         logical :: first_layer
+        integer :: newIdx
     end type ghost_point
 
     !> Species parameters

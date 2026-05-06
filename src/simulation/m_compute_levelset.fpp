@@ -33,7 +33,7 @@ contains
         integer :: i
 
         if (num_gps > 0) then
-            $:GPU_PARALLEL_LOOP(private='[i]', copy='[gps]', copyin='[Np,patch_ib(1:num_ibs)]')
+            $:GPU_PARALLEL_LOOP(private='[i]', copyin='[Np,patch_ib(1:num_ibs)]')
             do i = 1, num_gps
                 call s_compute_levelset(gps(i))
             end do

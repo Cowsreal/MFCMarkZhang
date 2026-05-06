@@ -62,7 +62,7 @@ module m_rhs
 
     private; public :: s_initialize_rhs_module, &
  s_compute_rhs, &
- s_finalize_rhs_module
+ s_finalize_rhs_module, flux_src_n
 
     !! This variable contains the WENO-reconstructed values of the cell-average
     !! conservative variables, which are located in q_cons_vf, at cell-interior
@@ -1059,6 +1059,21 @@ contains
         if (cont_damage) call s_compute_damage_state(q_cons_qp%vf, rhs_vf)
 
         ! END: Additional pphysics and source terms
+
+
+        if (.not. igr) then
+        $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
+        do l = idwbuff(3)%beg, idwbuff(3)%end
+            do k = idwbuff(2)%beg, idwbuff(2)%end
+                do j = idwbuff(1)%beg, idwbuff(1)%end
+                    flux_src_n(1)%vf(E_idx)%sf(j, k, l) = sqrt( &
+                    flux_src_n(1)%vf(E_idx)%sf(j, k, l)**2 +&
+                    flux_src_n(2)%vf(E_idx)%sf(j, k, l)**2)
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+        end if
 
         if (run_time_info .or. probe_wrt .or. ib .or. bubbles_lagrange) then
             if (.not. igr .or. dummy) then

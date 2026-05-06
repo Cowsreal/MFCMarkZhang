@@ -125,8 +125,10 @@ module m_global_parameters
         integer, parameter :: igr_iter_solver = ${igr_iter_solver}$ !< IGR elliptic solver
         integer, parameter :: igr_order = ${igr_order}$             !< Reconstruction order for IGR
         logical, parameter :: igr = (${igr}$ /= 0)                  !< use information geometric regularization
+        real(wp), parameter :: pr = ${pr}$
         logical, parameter :: igr_pres_lim = (${igr_pres_lim}$ /= 0)!< Limit to positive pressures for IGR
         logical, parameter :: viscous = (${viscous}$ /= 0)          !< Viscous effects
+        logical, parameter :: heat_conduction = (${heat_conduction}$ /= 0)          !< Viscous effects
     #:else
         integer :: recon_type     !< Reconstruction Type
         integer :: weno_polyn     !< Degree of the WENO polynomials (polyn)
@@ -148,6 +150,8 @@ module m_global_parameters
         logical :: igr            !< Use information geometric regularization
         logical :: igr_pres_lim   !< Limit to positive pressures for IGR
         logical :: viscous        !< Viscous effects
+        logical :: heat_conduction
+        real(wp) :: pr
     #:endif
 
     !> @name Variables for our of core IGR computation on NVIDIA
@@ -206,7 +210,7 @@ module m_global_parameters
         $:GPU_DECLARE(create='[num_dims,num_vels,weno_polyn,weno_order]')
         $:GPU_DECLARE(create='[weno_num_stencils,num_fluids,wenojs]')
         $:GPU_DECLARE(create='[mapped_weno, wenoz,teno,wenoz_q,mhd,relativity]')
-        $:GPU_DECLARE(create='[igr_iter_solver,igr_order,viscous,igr_pres_lim,igr]')
+        $:GPU_DECLARE(create='[igr_iter_solver,igr_order,viscous,heat_conduction,igr_pres_lim,igr]')
         $:GPU_DECLARE(create='[recon_type, muscl_order, muscl_polyn, muscl_lim]')
     #:endif
 
@@ -515,8 +519,8 @@ module m_global_parameters
     $:GPU_DECLARE(create='[strxb,strxe,chemxb,chemxe]')
     $:GPU_DECLARE(create='[xibeg,xiend]')
 
-    real(wp), allocatable, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps
-    $:GPU_DECLARE(create='[gammas,gs_min,pi_infs,ps_inf,cvs,qvs,qvps]')
+    real(wp), allocatable, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps,kaps
+    $:GPU_DECLARE(create='[gammas,gs_min,pi_infs,ps_inf,cvs,qvs,qvps,kaps]')
 
     real(wp) :: mytime       !< Current simulation time
     real(wp) :: finaltime    !< Final simulation time
@@ -1350,7 +1354,7 @@ contains
             $:GPU_UPDATE(device='[mhd, relativity]')
             $:GPU_UPDATE(device='[muscl_order, muscl_lim]')
             $:GPU_UPDATE(device='[igr, igr_order]')
-            $:GPU_UPDATE(device='[num_fluids,num_dims,viscous,num_vels,nb,muscl_lim]')
+            $:GPU_UPDATE(device='[num_fluids,num_dims,heat_conduction,viscous,num_vels,nb,muscl_lim]')
         #:endif
 
         $:GPU_UPDATE(device='[dir_idx,dir_flg,dir_idx_tau]')

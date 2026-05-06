@@ -312,6 +312,7 @@ class Case:
             teno   = 1 if self.params.get("teno", 'F') == 'T' else 0
             wenojs = 0 if (mapped_weno or wenoz or teno) else 1
             igr = 1 if self.params.get("igr", 'F') == 'T' else 0
+            heat_conduction = 1 if self.params.get("heat_conduction", 'F') == 'T' else 0
 
             recon_type = self.params.get("recon_type", 1)
 
@@ -370,6 +371,8 @@ class Case:
 #:set igr_pres_lim          = {igr_pres_lim}
 #:set igr_order             = {self.params.get("igr_order", 3)}
 #:set viscous               = {viscous}
+#:set heat_conduction = {heat_conduction}
+#:set pr               = {self.params.get("pr", 0)}
 """
 
         else:

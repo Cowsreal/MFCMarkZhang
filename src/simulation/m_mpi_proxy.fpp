@@ -180,13 +180,14 @@ contains
             call MPI_BCAST(igr_pres_lim, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(igr_iter_solver, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(viscous, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(heat_conduction, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(recon_type, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(muscl_order, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(muscl_lim, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         #:endif
 
         do i = 1, num_fluids_max
-            #:for VAR in [ 'gamma','pi_inf','G','cv','qv','qvp' ]
+            #:for VAR in [ 'gamma','pi_inf','G','cv','qv','qvp','kap']
                 call MPI_BCAST(fluid_pp(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
             call MPI_BCAST(fluid_pp(i)%Re(1), 2, mpi_p, 0, MPI_COMM_WORLD, ierr)
@@ -210,7 +211,7 @@ contains
             #:for VAR in [ 'radius', 'length_x', 'length_y', 'length_z', &
                 'x_centroid', 'y_centroid', 'z_centroid', 'smooth', 'c', 'm', &
                 'p', 't', 'theta', 'slip', 'true_bcs', 'mass', 'model_threshold', &
-                'steep', 'shift', 'pts', 'dr_fac', 'temp']
+                'steep', 'shift', 'pts', 'dr_fac', 'temp', 'bound_weight']
                 call MPI_BCAST(patch_ib(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
             #:for VAR in ['vel', 'angular_vel', 'angles', 'model_translate', 'model_scale']

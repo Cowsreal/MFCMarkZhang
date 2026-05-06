@@ -153,7 +153,7 @@ contains
 #:if not MFC_CASE_OPTIMIZATION
             nb, mapped_weno, wenoz, teno, wenoz_q, weno_order, &
             num_fluids, mhd, relativity, igr_order, viscous, &
-            igr_iter_solver, igr, igr_pres_lim, &
+            heat_conduction, igr_iter_solver, igr, igr_pres_lim, &
             recon_type, muscl_order, muscl_lim, &
 #:endif
             Ca, Web, Re_inv, &
@@ -854,7 +854,7 @@ contains
         if (t_step == 0 .and. ib) then
             if(igr) then
                 call s_smooth_ib_boundaries(bc_type, q_cons_ts(1)%vf)
-                call s_save_data(t_step, start1, finish1, io_time_avg, nt)
+                !call s_save_data(t_step, start1, finish1, io_time_avg, nt)
             end if
             !call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
             if(igr) then
@@ -866,7 +866,7 @@ contains
             print *, "finished correct state"
             if(igr) then
                 call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
-                call s_save_data(t_step, start1, finish1, io_time_avg, nt)
+                !call s_save_data(t_step, start1, finish1, io_time_avg, nt)
             end if
 
             print *, "saved here"

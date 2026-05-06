@@ -30,6 +30,8 @@ module m_data_output
 
     use m_boundary_common
 
+    use m_rhs
+
     implicit none
 
     private; 
@@ -953,7 +955,7 @@ contains
             ! Initialize MPI data I/O
 
             if (ib) then
-                call s_initialize_mpi_data(q_cons_vf, ib_markers)
+                call s_initialize_mpi_data(q_cons_vf, ib_markers,flux_vf=flux_src_n)
             elseif (present(beta)) then
                 call s_initialize_mpi_data(q_cons_vf, beta=beta)
             else
@@ -1011,7 +1013,17 @@ contains
                     end do
                 end if
             else
-                do i = 1, sys_size !TODO: check if correct (sys_size
+                    var_MOK = int(1, MPI_OFFSET_KIND)
+
+                    ! Initial displacement to skip at beginning of file
+                    disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
+
+                    call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(1), &
+                                           'native', mpi_info_int, ierr)
+                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(1)%sf, data_size*mpi_io_type, &
+                                            mpi_io_p, status, ierr)
+
+                do i = 2, sys_size !TODO: check if correct (sys_size
                     var_MOK = int(i, MPI_OFFSET_KIND)
 
                     ! Initial displacement to skip at beginning of file
@@ -1022,6 +1034,7 @@ contains
                     call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
                                             mpi_io_p, status, ierr)
                 end do
+
             end if
 
             ! Correction for the lagrangian subgrid bubble model

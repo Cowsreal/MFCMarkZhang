@@ -125,9 +125,10 @@ contains
     !! @param q_cons_vf Conservative variables
     !! @param ib_markers track if a cell is within the immersed boundary
     !! @param beta Eulerian void fraction from lagrangian bubbles
-    impure subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, beta)
+    impure subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, beta, flux_vf)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
+        type(vector_field), dimension(2), optional, intent(in) :: flux_vf
         type(integer_field), optional, intent(in) :: ib_markers
         type(scalar_field), intent(in), optional :: beta
 
@@ -167,6 +168,7 @@ contains
 #elif defined (MFC_SIMULATION)
                     MPI_IO_DATA%var(sys_size + (i - 1)*nnode + j)%sf => pb_ts(1)%sf(0:m, 0:n, 0:p, j, i)
                     MPI_IO_DATA%var(sys_size + (i - 1)*nnode + j + nb*nnode)%sf => mv_ts(1)%sf(0:m, 0:n, 0:p, j, i)
+        MPI_IO_DATA%var(1)%sf => flux_vf(1)%vf(E_idx)%sf(0:m, 0:n, 0:p)
 #endif
                 end do
             end do

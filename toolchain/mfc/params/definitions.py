@@ -57,6 +57,7 @@ _ATTR_DESCS = {
     "cv": "Specific heat (const. volume)",
     "qv": "Heat of formation",
     "qvp": "Heat of formation prime",
+    "kap": "Heat Conduction Coefficient",
     "G": "Shear modulus",
     "Re": "Reynolds number",
     "mul0": "Reference viscosity",
@@ -191,6 +192,7 @@ _SIMPLE_DESCS = {
     "avg_state": "Average state",
     # Physics toggles
     "viscous": "Enable viscous effects",
+    "heat_conduction": "Enable the heat conduction term in the energy equation",
     "mhd": "Enable magnetohydrodynamics",
     "hyper_cleaning": "Enable hyperbolic divergence cleaning",
     "hyper_cleaning_speed": "Divergence cleaning wave speed",
@@ -341,7 +343,7 @@ def _auto_describe(name: str) -> str:
 CASE_OPT_PARAMS = {
     "mapped_weno", "wenoz", "teno", "wenoz_q", "nb", "weno_order",
     "num_fluids", "mhd", "relativity", "igr_order", "viscous",
-    "igr_iter_solver", "igr", "igr_pres_lim", "recon_type",
+    "heat_conduction","igr_iter_solver", "igr", "igr_pres_lim", "recon_type", "pr",
     "muscl_order", "muscl_lim"
 }
 
@@ -395,6 +397,7 @@ HINTS = {
         "cv": "Specific heat at constant volume",
         "qv": "Heat of formation",
         "qvp": "Heat of formation derivative",
+        "kap": "Thermal conductivity coefficient"
     },
 }
 
@@ -706,6 +709,11 @@ DEPENDENCIES = {
             "recommends": ["fluid_pp(1)%Re(1)"],
         }
     },
+    "heat_conduction": {
+        "when_true": {
+            "recommends": ["fluid_pp(1)%kap"],
+        }
+    },
     "polydisperse": {
         "when_true": {
             "requires": ["nb", "poly_sigma"],
@@ -901,6 +909,9 @@ def _load():  # pylint: disable=too-many-locals,too-many-statements
     # --- Viscosity ---
     _r("viscous", LOG, {"viscosity"})
 
+    # --- Heat Conduction ---
+    _r("heat_conduction", LOG, {"heat_conduction"})
+
     # --- Elasticity ---
     for n in ["hypoelasticity", "hyperelasticity"]:
         _r(n, LOG, {"elasticity"})
@@ -974,7 +985,7 @@ def _load():  # pylint: disable=too-many-locals,too-many-statements
     for n in ["mixlayer_vel_coef", "mixlayer_domain", "mixlayer_perturb_k0",
               "perturb_flow_mag", "fluid_rho", "sigR", "sigV", "rhoRV",
               "tau_star", "cont_damage_s", "alpha_bar", "alf_factor",
-              "ic_eps", "ic_beta"]:
+              "ic_eps", "ic_beta", "pr"]:
         _r(n, REAL)
     for n in ["mpp_lim", "relax", "adv_n", "cont_damage", "igr", "down_sample",
               "old_grid", "old_ic", "mixlayer_vel_profile", "mixlayer_perturb",
@@ -1049,7 +1060,7 @@ def _load():  # pylint: disable=too-many-locals,too-many-statements
         px = f"fluid_pp({f})%"
         for a, sym in [("gamma", r"\f$\gamma_k\f$"), ("pi_inf", r"\f$\pi_{\infty,k}\f$"),
                        ("cv", r"\f$c_{v,k}\f$"), ("qv", r"\f$q_{v,k}\f$"),
-                       ("qvp", r"\f$q'_{v,k}\f$")]:
+                       ("qvp", r"\f$q'_{v,k}\f$"),("kap", r"\f$k\f$")]:
             _r(f"{px}{a}", REAL, math=sym)
         _r(f"{px}mul0", REAL, {"viscosity"}, math=r"\f$\mu_{l,k}\f$")
         _r(f"{px}ss", REAL, {"surface_tension"}, math=r"\f$\sigma_k\f$")
@@ -1078,7 +1089,8 @@ def _load():  # pylint: disable=too-many-locals,too-many-statements
         for a in ["geometry", "moving_ibm"]:
             _r(f"{px}{a}", INT, {"ib"})
         for a, pt in [("true_bcs", LOG), ("smooth", REAL), ("radius", REAL), ("steep", REAL), ("shift", REAL), ("inner_radius", REAL), ("theta", REAL), ("slip", LOG), ("c", REAL),
-                      ("p", REAL), ("t", REAL), ("m", REAL), ("mass", REAL), ("high_order", INT), ("dr_fac", REAL), ("pts", REAL), ("print_cond", LOG), ("hybrid", LOG), ("temp", REAL)]:
+                      ("p", REAL), ("t", REAL), ("m", REAL), ("mass", REAL), ("high_order", INT), ("dr_fac", REAL), ("pts", REAL), ("print_cond", LOG), ("hybrid", LOG), 
+                      ("temp", REAL), ("bound_weight", REAL)]:
             _r(f"{px}{a}", pt, {"ib"})
         for j in range(1, 4):
             _r(f"{px}angles({j})", REAL, {"ib"})
