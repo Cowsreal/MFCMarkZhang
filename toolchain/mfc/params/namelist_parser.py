@@ -11,8 +11,7 @@ fallback parameter set is used instead.
 
 import re
 from pathlib import Path
-from typing import Dict, Set
-
+from typing import Dict, Optional, Set
 
 # Fallback parameters for when Fortran source files are not available.
 # Generated from the namelist definitions in src/*/m_start_up.fpp.
@@ -74,31 +73,124 @@ _FALLBACK_PARAMS = {
         'y_a', 'y_b', 'y_domain', 'z_a', 'z_b',
         'z_domain',
     },
-    'post_process': {
-        'Bx0', 'Ca', 'E_wrt', 'G', 'R0ref',
-        'Re_inv', 'Web', 'adv_n', 'alpha_rho_e_wrt', 'alpha_rho_wrt',
-        'alpha_wrt', 'alt_soundspeed', 'avg_state', 'bc_x', 'bc_y',
-        'bc_z', 'bub_pp', 'bubbles_euler', 'bubbles_lagrange', 'c_wrt',
-        'case_dir', 'cf_wrt', 'cfl_adap_dt', 'cfl_const_dt', 'cfl_target',
-        'chem_wrt_T', 'chem_wrt_Y', 'cons_vars_wrt', 'cont_damage', 'cyl_coord',
-        'down_sample', 'fd_order', 'fft_wrt', 'file_per_process', 'fluid_pp',
-        'flux_lim', 'flux_wrt', 'format', 'gamma_wrt', 'heat_ratio_wrt',
-        'hyper_cleaning', 'hyperelasticity', 'hypoelasticity', 'ib', 'igr',
-        'igr_order', 'lag_betaC_wrt', 'lag_betaT_wrt', 'lag_db_wrt', 'lag_dphidt_wrt',
-        'lag_header', 'lag_id_wrt', 'lag_mg_wrt', 'lag_mv_wrt', 'lag_pos_prev_wrt',
-        'lag_pos_wrt', 'lag_pres_wrt', 'lag_r0_wrt', 'lag_rad_wrt', 'lag_rmax_wrt',
-        'lag_rmin_wrt', 'lag_rvel_wrt', 'lag_txt_wrt', 'lag_vel_wrt', 'liutex_wrt',
-        'm', 'mhd', 'mixture_err', 'model_eqns', 'mom_wrt',
-        'mpp_lim', 'muscl_order', 'n', 'n_start', 'nb',
-        'num_bc_patches', 'num_fluids', 'num_ibs', 'omega_wrt', 'output_partial_domain',
-        'p', 'parallel_io', 'pi_inf_wrt', 'poly_sigma', 'polydisperse',
-        'polytropic', 'precision', 'pref', 'pres_inf_wrt', 'pres_wrt',
-        'prim_vars_wrt', 'qbmm', 'qm_wrt', 'recon_type', 'relativity',
-        'relax', 'relax_model', 'rho_wrt', 'rhoref', 'schlieren_alpha',
-        'schlieren_wrt', 'sigR', 'sigma', 'sim_data', 'surface_tension',
-        't_save', 't_step_save', 't_step_start', 't_step_stop', 't_stop',
-        'thermal', 'vel_wrt', 'weno_order', 'x_output', 'y_output',
-        'z_output',
+    "post_process": {
+        "Bx0",
+        "Ca",
+        "E_wrt",
+        "G",
+        "R0ref",
+        "Re_inv",
+        "Web",
+        "adv_n",
+        "alpha_rho_e_wrt",
+        "alpha_rho_wrt",
+        "alpha_wrt",
+        "alt_soundspeed",
+        "avg_state",
+        "bc_x",
+        "bc_y",
+        "bc_z",
+        "bub_pp",
+        "bubbles_euler",
+        "bubbles_lagrange",
+        "c_wrt",
+        "case_dir",
+        "cf_wrt",
+        "cfl_adap_dt",
+        "cfl_const_dt",
+        "cfl_target",
+        "chem_wrt_T",
+        "chem_wrt_Y",
+        "cons_vars_wrt",
+        "cont_damage",
+        "cyl_coord",
+        "down_sample",
+        "fd_order",
+        "fft_wrt",
+        "file_per_process",
+        "fluid_pp",
+        "flux_lim",
+        "flux_wrt",
+        "format",
+        "gamma_wrt",
+        "heat_ratio_wrt",
+        "hyper_cleaning",
+        "hyperelasticity",
+        "hypoelasticity",
+        "ib",
+        "ib_state_wrt",
+        "igr",
+        "igr_order",
+        "lag_betaC_wrt",
+        "lag_betaT_wrt",
+        "lag_db_wrt",
+        "lag_dphidt_wrt",
+        "lag_header",
+        "lag_id_wrt",
+        "lag_mg_wrt",
+        "lag_mv_wrt",
+        "lag_pos_prev_wrt",
+        "lag_pos_wrt",
+        "lag_pres_wrt",
+        "lag_r0_wrt",
+        "lag_rad_wrt",
+        "lag_rmax_wrt",
+        "lag_rmin_wrt",
+        "lag_rvel_wrt",
+        "lag_txt_wrt",
+        "lag_vel_wrt",
+        "liutex_wrt",
+        "m",
+        "mhd",
+        "mixture_err",
+        "model_eqns",
+        "mom_wrt",
+        "mpp_lim",
+        "muscl_order",
+        "n",
+        "n_start",
+        "nb",
+        "num_bc_patches",
+        "num_fluids",
+        "num_ibs",
+        "omega_wrt",
+        "output_partial_domain",
+        "p",
+        "parallel_io",
+        "pi_inf_wrt",
+        "poly_sigma",
+        "polydisperse",
+        "polytropic",
+        "precision",
+        "pref",
+        "pres_inf_wrt",
+        "pres_wrt",
+        "prim_vars_wrt",
+        "qbmm",
+        "qm_wrt",
+        "recon_type",
+        "relativity",
+        "relax",
+        "relax_model",
+        "rho_wrt",
+        "rhoref",
+        "schlieren_alpha",
+        "schlieren_wrt",
+        "sigR",
+        "sigma",
+        "sim_data",
+        "surface_tension",
+        "t_save",
+        "t_step_save",
+        "t_step_start",
+        "t_step_stop",
+        "t_stop",
+        "thermal",
+        "vel_wrt",
+        "weno_order",
+        "x_output",
+        "y_output",
+        "z_output",
     },
 }
 
@@ -117,11 +209,7 @@ def parse_namelist_from_file(filepath: Path) -> Set[str]:
 
     # Find the namelist block - starts with "namelist /user_inputs/"
     # and continues until a line without continuation (&) or a blank line
-    namelist_match = re.search(
-        r'namelist\s+/user_inputs/\s*(.+?)(?=\n\s*\n|\n\s*!(?!\s*&)|\n\s*[a-zA-Z_]+\s*=)',
-        content,
-        re.DOTALL | re.IGNORECASE
-    )
+    namelist_match = re.search(r"namelist\s+/user_inputs/\s*(.+?)(?=\n\s*\n|\n\s*!(?!\s*&)|\n\s*[a-zA-Z_]+\s*=)", content, re.DOTALL | re.IGNORECASE)
 
     if not namelist_match:
         raise ValueError(f"Could not find namelist /user_inputs/ in {filepath}")
@@ -129,21 +217,21 @@ def parse_namelist_from_file(filepath: Path) -> Set[str]:
     namelist_text = namelist_match.group(1)
 
     # Remove Fortran line continuations (&) and join lines
-    namelist_text = re.sub(r'&\s*\n\s*', ' ', namelist_text)
+    namelist_text = re.sub(r"&\s*\n\s*", " ", namelist_text)
 
     # Remove preprocessor directives (#:if, #:endif, etc.)
-    namelist_text = re.sub(r'#:.*', '', namelist_text)
+    namelist_text = re.sub(r"#:.*", "", namelist_text)
 
     # Remove comments (! to end of line, but not inside strings)
-    namelist_text = re.sub(r'!.*', '', namelist_text)
+    namelist_text = re.sub(r"!.*", "", namelist_text)
 
     # Extract parameter names - they're comma-separated identifiers
     # Parameter names are alphanumeric with underscores
     found_params = set()
-    for match in re.finditer(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', namelist_text):
+    for match in re.finditer(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", namelist_text):
         name = match.group(1)
         # Skip Fortran keywords that might appear
-        if name.lower() not in {'namelist', 'user_inputs', 'if', 'endif', 'not'}:
+        if name.lower() not in {"namelist", "user_inputs", "if", "endif", "not"}:
             found_params.add(name)
 
     return found_params
@@ -161,9 +249,9 @@ def parse_all_namelists(mfc_root: Path) -> Dict[str, Set[str]]:
         Falls back to built-in parameter sets when sources are unavailable.
     """
     targets = {
-        'pre_process': mfc_root / 'src' / 'pre_process' / 'm_start_up.fpp',
-        'simulation': mfc_root / 'src' / 'simulation' / 'm_start_up.fpp',
-        'post_process': mfc_root / 'src' / 'post_process' / 'm_start_up.fpp',
+        "pre_process": mfc_root / "src" / "pre_process" / "m_start_up.fpp",
+        "simulation": mfc_root / "src" / "simulation" / "m_start_up.fpp",
+        "post_process": mfc_root / "src" / "post_process" / "m_start_up.fpp",
     }
 
     result = {}
@@ -175,6 +263,55 @@ def parse_all_namelists(mfc_root: Path) -> Dict[str, Set[str]]:
         result[target_name] = parse_namelist_from_file(filepath)
 
     return result
+
+
+def parse_fortran_constants(filepath: Path) -> Dict[str, int]:
+    """
+    Parse integer parameter constants from a Fortran source file.
+
+    Extracts lines like ``integer, parameter :: name = 123`` and returns
+    a dict mapping constant names to their integer values.
+    """
+    constants: Dict[str, int] = {}
+    pattern = re.compile(r"integer\s*,\s*parameter\s*::\s*(\w+)\s*=\s*(\d+)", re.IGNORECASE)
+    try:
+        text = filepath.read_text()
+    except FileNotFoundError:
+        return constants
+    for m in pattern.finditer(text):
+        constants[m.group(1)] = int(m.group(2))
+    return constants
+
+
+# Module-level cache for Fortran constants (None = not yet loaded)
+_FORTRAN_CONSTANTS_CACHE: Optional[Dict[str, int]] = None
+
+
+def get_fortran_constants() -> Dict[str, int]:
+    """
+    Get Fortran compile-time constants from m_constants.fpp.
+
+    Cached after first call. Falls back to built-in defaults when the Fortran
+    source is unavailable (e.g. Homebrew installs where src/ is not shipped).
+    """
+    global _FORTRAN_CONSTANTS_CACHE  # noqa: PLW0603
+    if _FORTRAN_CONSTANTS_CACHE is None:
+        root = get_mfc_root()
+        path = root / "src" / "common" / "m_constants.fpp"
+        _FORTRAN_CONSTANTS_CACHE = parse_fortran_constants(path)
+        if not _FORTRAN_CONSTANTS_CACHE:
+            _FORTRAN_CONSTANTS_CACHE = _FALLBACK_CONSTANTS.copy()
+    return _FORTRAN_CONSTANTS_CACHE
+
+
+# Fallback values for when m_constants.fpp is not available at runtime.
+# Keep in sync with src/common/m_constants.fpp.
+_FALLBACK_CONSTANTS: Dict[str, int] = {
+    "num_fluids_max": 10,
+    "num_probes_max": 10,
+    "num_patches_max": 1000,
+    "num_bc_patches_max": 10,
+}
 
 
 def get_mfc_root() -> Path:
@@ -219,14 +356,14 @@ def is_param_valid_for_target(param_name: str, target_name: str) -> bool:
     # Extract base parameter name (before any index or attribute)
     # e.g., "patch_icpp(1)%geometry" -> "patch_icpp"
     # e.g., "fluid_pp(2)%gamma" -> "fluid_pp"
-    base_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)', param_name)
+    base_match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)", param_name)
     if base_match:
         return base_match.group(1) in valid_params
 
     return param_name in valid_params
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Test the parser
     import sys
 

@@ -39,6 +39,7 @@ p-all python/3.12.5
 p-cpu gcc/12.3.0 openmpi/4.1.5
 p-gpu python/3.12.5 nvhpc/24.5 hpcx/2.19-cuda cuda/12.1.1
 p-gpu MFC_CUDA_CC=70,75,80,89,90 NVHPC_CUDA_HOME=$CUDA_HOME CC=nvc CXX=nvc++ FC=nvfortran
+p-gpu-unload xalt
 
 f     OLCF Frontier
 f-all cpe/25.03 rocm/6.3.1
@@ -65,12 +66,20 @@ d-gpu MFC_CUDA_CC=80,86
 
 o     Brown Oscar
 o-all python
-o-cpu hpcx-mpi python/3.13.10s
+o-cpu hpcx-mpi python/3.13.5
 o-gpu nvhpc cuda/12.3.0 cmake/3.26.3
 o-gpu CC=nvc CXX=nvc++ FC=nvfortran
 
+pa     Purdue Anvil
+pa-cpu gcc/11.2.0 
+pa-cpu openmpi/4.1.6 
+pa-cpu python/3.9.5 
+pa-cpu fftw/3.3.8 
+pa-cpu cmake/3.20.0
+pa-all PYTHONPATH=""
+
 dai     NCSA DeltaAI
-dai-all python cmake nvhpc-openmpi3/24.3 cuda
+dai-all python cmake nvidia/25.5
 dai-all CC=nvc CXX=nvc++ FC=nvfortran
 dai-gpu MFC_CUDA_CC=89,90
 
@@ -102,3 +111,7 @@ h-gpu CC=/apps/compilers/nvhpc/25.9/Linux_x86_64/25.9/comm_libs/mpi/bin/mpicc
 h-gpu CXX=/apps/compilers/nvhpc/25.9/Linux_x86_64/25.9/comm_libs/mpi/bin/mpicxx
 h-gpu FC=/apps/compilers/nvhpc/25.9/Linux_x86_64/25.9/comm_libs/mpi/bin/mpifort
 h-gpu NVCOMPILER_COMM_LIBS_HOME=/apps/compilers/nvhpc/25.9/Linux_x86_64/25.9/comm_libs/12.9
+
+t     WPI Turing
+t-all slurm
+t-cpu gcc/12.1.0/i6yk33f openmpi/4.1.3/ebae7zc python/3.13.5/6anz4qy

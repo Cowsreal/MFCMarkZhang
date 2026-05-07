@@ -334,7 +334,7 @@ do l = 0, p
     do k = 0, n
         do j = 0, m
             rho = q_prim_vf(1)%sf(j, k, l)
-            pres = q_prim_vf(E_idx)%sf(j, k, l)
+            pres = q_prim_vf(eqn_idx%E)%sf(j, k, l)
             ! ... use rho, pres as thread-local ...
         end do
     end do
@@ -369,7 +369,7 @@ do l = 0, p
         do j = 0, m
             $:GPU_LOOP(parallelism='[seq]')
             do i = 1, num_fluids
-                alpha(i) = q_prim_vf(advxb + i - 1)%sf(j, k, l)
+                alpha(i) = q_prim_vf(eqn_idx%adv%beg + i - 1)%sf(j, k, l)
             end do
         end do
     end do
@@ -715,14 +715,15 @@ Every push to a PR triggers CI. Understanding the pipeline helps you fix failure
 
 ### Lint Gate (runs first, blocks all other jobs)
 
-All four checks must pass before any builds start:
+All five checks must pass before any builds start:
 
 1. **Formatting** — `./mfc.sh format` (auto-handled by pre-commit hook)
 2. **Spelling** — `./mfc.sh spelling`
-3. **Toolchain lint** — `./mfc.sh lint` (Python code quality)
+3. **Toolchain lint** — `./mfc.sh lint` (ruff + Python unit tests)
 4. **Source lint** — checks for:
    - Raw `!$acc` or `!$omp` directives (must use Fypp GPU macros)
    - Double-precision intrinsics (`dsqrt`, `dexp`, `dble`, etc.)
+5. **Doc references** — validates documentation cross-references
 
 ### Build and Test Matrix
 

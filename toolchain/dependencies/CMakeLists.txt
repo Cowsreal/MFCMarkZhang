@@ -61,11 +61,13 @@ if (MFC_HDF5)
             GIT_PROGRESS   ON
             CMAKE_ARGS     "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}"
                             -DBUILD_SHARED_LIBS=OFF
-                            -DFORTRAN_LIBRARIES=ON
                             -DBUILD_TESTING=OFF
                             -DHDF5_BUILD_UTILS=OFF
                             -DHDF5_BUILD_TOOLS=ON
                             -DHDF5_BUILD_EXAMPLES=OFF
+                            -DHDF5_BUILD_CPP_LIB=OFF
+                            -DHDF5_BUILD_FORTRAN=OFF
+                            -DHDF5_ENABLE_PARALLEL=OFF
         )
     endif()
 endif()
@@ -80,20 +82,34 @@ if (MFC_SILO)
     else()
         find_package(Git REQUIRED)
 
+        # When the system HDF5 is the MPI-enabled variant (e.g. libhdf5-openmpi-dev),
+        # its headers transitively include mpi.h.  Propagate MPI include dirs into the
+        # silo sub-build so those headers can be found.
+        find_package(MPI COMPONENTS C QUIET)
+        set(_silo_c_flags "${CMAKE_C_FLAGS}")
+        if (MPI_C_FOUND)
+            foreach(_dir IN LISTS MPI_C_INCLUDE_DIRS)
+                string(APPEND _silo_c_flags " -I${_dir}")
+            endforeach()
+        endif()
+
         ExternalProject_Add(silo
             GIT_REPOSITORY "https://github.com/LLNL/Silo"
-            GIT_TAG        0cddaa6865fb49ae7b2110fa1b6f2709592abe0b
+            GIT_TAG        4.12.0
+            GIT_SHALLOW    ON
             GIT_PROGRESS   ON
             PATCH_COMMAND  "${GIT_EXECUTABLE}" stash
                         && "${GIT_EXECUTABLE}" apply "${CMAKE_SOURCE_DIR}/Silo.patch"
             CMAKE_ARGS     -DSILO_ENABLE_SHARED=OFF
                            -DSILO_ENABLE_SILOCK=OFF
                            -DSILO_ENABLE_BROWSER=OFF
+                           -DSILO_ENABLE_ZFP=OFF
                            -DFIND_LIBRARY_USE_LIB64_PATHS=ON
                            "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
                            "-DCMAKE_FIND_ROOT_PATH=${CMAKE_FIND_ROOT_PATH}"
                            "-DCMAKE_FIND_PACKAGE_REDIRECTS_DIR=${CMAKE_FIND_PACKAGE_REDIRECTS_DIR}"
                            "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}"
+                           "-DCMAKE_C_FLAGS=${_silo_c_flags}"
                            "$<$<STREQUAL:${CMAKE_Fortran_COMPILER_ID},Cray>:-DCMAKE_MODULE_PATH=${CMAKE_SOURCE_DIR}/../cmake/cce>"
         )
     endif()
