@@ -1270,7 +1270,7 @@ contains
                             if (mhd .and. (.not. relativity)) then
                                 ! energy flux = (E + p + p_mag) * v_${XYZ}$ - B_${XYZ}$ * (v_x*B_x + v_y*B_y + v_z*B_z)
                                 #:if not MFC_CASE_OPTIMIZATION or num_dims > 2
-                                    flux_rs${XYZ}$_vf(j, k, l, E_idx) = &
+                                    flux_rs${XYZ}$_vf(j, k, l, eqn_idx%E) = &
                                         (s_M*(vel_R(norm_dir)*(E_R + pres_R + pres_mag%R) - B%R(norm_dir)*(vel_R(1)*B%R(1) + vel_R(2)*B%R(2) + vel_R(3)*B%R(3))) &
                                          - s_P*(vel_L(norm_dir)*(E_L + pres_L + pres_mag%L) - B%L(norm_dir)*(vel_L(1)*B%L(1) + vel_L(2)*B%L(2) + vel_L(3)*B%L(3))) &
                                          + s_M*s_P*(E_L - E_R)) &
@@ -4539,12 +4539,12 @@ contains
                             dx = y_cc(k + 1) - y_cc(k)
                     end select
 
-                    p_L = q_prim_vf(E_idx)%sf(j, k, l)
-                    p_R = q_prim_vf(E_idx)%sf(j + offsets(1), k + offsets(2), l)
-                    rho_L = q_prim_vf(contxb)%sf(j, k, l)
-                    rho_R = q_prim_vf(contxb)%sf(j + offsets(1), k + offsets(2), l)
+                    p_L = q_prim_vf(eqn_idx%E)%sf(j, k, l)
+                    p_R = q_prim_vf(eqn_idx%E)%sf(j + offsets(1), k + offsets(2), l)
+                    rho_L = q_prim_vf(eqn_idx%cont%beg)%sf(j, k, l)
+                    rho_R = q_prim_vf(eqn_idx%cont%beg)%sf(j + offsets(1), k + offsets(2), l)
                     dT_dx = gammas(1) * (p_R / (rho_R * cvs(1)) - p_L / (rho_L * cvs(1))) / dx
-                    flux_src_vf(E_idx)%sf(j, k, l) = flux_src_vf(E_idx)%sf(j, k, l) - kaps(1) * dT_dx
+                    flux_src_vf(eqn_idx%E)%sf(j, k, l) = flux_src_vf(eqn_idx%E)%sf(j, k, l) - kaps(1) * dT_dx
                 end do
             end do
         end do

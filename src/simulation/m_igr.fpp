@@ -593,14 +593,13 @@ contains
                                         vflux_R_arr(3) = vflux_R_arr(3) + coeff_R(q)*(4._wp*dvel_small(1))/3._wp
                                     end if
 
-<<<<<<< HEAD
                                     if (pr /= 0._wp) then
                                         do i = 1, num_dims
-                                            vel_L(i) = q_cons_vf(momxb + i - 1)%sf(j + q - 1, k, l) / rho_sf_small(-1)
-                                            vel_R(i) = q_cons_vf(momxb + i - 1)%sf(j + q + 1, k, l) / rho_sf_small(1)
+                                            vel_L(i) = q_cons_vf(eqn_idx%mom%beg + i - 1)%sf(j + q - 1, k, l) / rho_sf_small(-1)
+                                            vel_R(i) = q_cons_vf(eqn_idx%mom%beg + i - 1)%sf(j + q + 1, k, l) / rho_sf_small(1)
                                         end do
-                                        call s_get_derived_states(q_cons_vf(E_idx)%sf(j + q - 1, k, l), gammas(1), 0._wp, rho_sf_small(-1), vel_L, &
-                                                                q_cons_vf(E_idx)%sf(j + q + 1, k, l), gammas(1), 0._wp, rho_sf_small(1), vel_R, &
+                                        call s_get_derived_states(q_cons_vf(igr_E_idx)%sf(j + q - 1, k, l), gammas(1), 0._wp, rho_sf_small(-1), vel_L, &
+                                                                q_cons_vf(igr_E_idx)%sf(j + q + 1, k, l), gammas(1), 0._wp, rho_sf_small(1), vel_R, &
                                                                 pres_L, pres_R, cfl)
                                         if (q > vidxb) then
                                             hflux_L = hflux_L + coeff_L(q) * pr * (1 / (2._wp * dx(j))) * gammas(1) * (&
@@ -1539,11 +1538,11 @@ contains
 
                                         if (pr /= 0._wp) then
                                             do i = 1, num_dims
-                                                vel_L(i) = q_cons_vf(momxb + i - 1)%sf(j, k + q - 1, l) / rho_sf_small(-1)
-                                                vel_R(i) = q_cons_vf(momxb + i - 1)%sf(j, k + q + 1, l) / rho_sf_small(1)
+                                                vel_L(i) = q_cons_vf(eqn_idx%mom%beg + i - 1)%sf(j, k + q - 1, l) / rho_sf_small(-1)
+                                                vel_R(i) = q_cons_vf(eqn_idx%mom%beg + i - 1)%sf(j, k + q + 1, l) / rho_sf_small(1)
                                             end do
-                                            call s_get_derived_states(q_cons_vf(E_idx)%sf(j, k + q - 1, l), gammas(1), 0._wp, rho_sf_small(-1), vel_L, &
-                                                                    q_cons_vf(E_idx)%sf(j, k + q + 1, l), gammas(1), 0._wp, rho_sf_small(1), vel_R, &
+                                            call s_get_derived_states(q_cons_vf(eqn_idx%E)%sf(j, k + q - 1, l), gammas(1), 0._wp, rho_sf_small(-1), vel_L, &
+                                                                    q_cons_vf(eqn_idx%E)%sf(j, k + q + 1, l), gammas(1), 0._wp, rho_sf_small(1), vel_R, &
                                                                     pres_L, pres_R, cfl)
                                             if (q > vidxb) then
                                                 hflux_L = hflux_L + coeff_L(q) * pr * (1 / (2._wp * dy(k))) * gammas(1) * (&

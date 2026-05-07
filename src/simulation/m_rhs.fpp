@@ -851,9 +851,9 @@ contains
         do l = idwbuff(3)%beg, idwbuff(3)%end
             do k = idwbuff(2)%beg, idwbuff(2)%end
                 do j = idwbuff(1)%beg, idwbuff(1)%end
-                    flux_src_n(1)%vf(E_idx)%sf(j, k, l) = sqrt( &
-                    flux_src_n(1)%vf(E_idx)%sf(j, k, l)**2 +&
-                    flux_src_n(2)%vf(E_idx)%sf(j, k, l)**2)
+                    flux_src_n(1)%vf(eqn_idx%E)%sf(j, k, l) = sqrt( &
+                    flux_src_n(1)%vf(eqn_idx%E)%sf(j, k, l)**2 +&
+                    flux_src_n(2)%vf(eqn_idx%E)%sf(j, k, l)**2)
                 end do
             end do
         end do

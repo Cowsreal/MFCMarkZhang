@@ -444,19 +444,6 @@ module m_global_parameters
     $:GPU_DECLARE(create='[sigma, surface_tension]')
     !> @}
 
-    integer :: momxb, momxe
-    integer :: advxb, advxe
-    integer :: contxb, contxe
-    integer :: intxb, intxe
-    integer :: bubxb, bubxe
-    integer :: strxb, strxe
-    integer :: chemxb, chemxe
-    integer :: xibeg, xiend
-    $:GPU_DECLARE(create='[momxb,momxe,advxb,advxe,contxb,contxe]')
-    $:GPU_DECLARE(create='[intxb,intxe, bubxb,bubxe]')
-    $:GPU_DECLARE(create='[strxb,strxe,chemxb,chemxe]')
-    $:GPU_DECLARE(create='[xibeg,xiend]')
-
     real(wp), allocatable, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps,kaps
     $:GPU_DECLARE(create='[gammas,gs_min,pi_infs,ps_inf,cvs,qvs,qvps,kaps]')
 

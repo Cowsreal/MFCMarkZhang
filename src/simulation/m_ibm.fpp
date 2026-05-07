@@ -88,7 +88,7 @@ contains
     impure subroutine s_ibm_setup()
 
         integer :: i, j, k
-        integer :: max_num_gps
+        integer :: max_num_gps, max_num_inner_gps
 
         call nvtxStartRange("SETUP-IBM-MODULE")
 
@@ -330,20 +330,20 @@ contains
             dynPresOld = 0._wp
             dynPresNew = 0._wp
             do d = 1, num_dims
-                dynPresOld = dynPresOld + q_cons_vf(momxb + d - 1)%sf(j, k, l) ** 2
-                dynPresNew = dynPresNew + (alpha * q_cons_vf(momxb + d - 1)%sf(j, k, l)) ** 2
-                q_cons_vf(momxb + d - 1)%sf(j, k, l) = alpha * q_cons_vf(momxb + d - 1)%sf(j, k, l)
+                dynPresOld = dynPresOld + q_cons_vf(eqn_idx%mom%beg + d - 1)%sf(j, k, l) ** 2
+                dynPresNew = dynPresNew + (alpha * q_cons_vf(eqn_idx%mom%beg + d - 1)%sf(j, k, l)) ** 2
+                q_cons_vf(eqn_idx%mom%beg + d - 1)%sf(j, k, l) = alpha * q_cons_vf(eqn_idx%mom%beg + d - 1)%sf(j, k, l)
             end do
-            dynPresOld = dynPresOld / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
-            dynPresNew = dynPresNew / (2._wp * q_cons_vf(contxb)%sf(j, k, l))
+            dynPresOld = dynPresOld / (2._wp * q_cons_vf(eqn_idx%cont%beg)%sf(j, k, l))
+            dynPresNew = dynPresNew / (2._wp * q_cons_vf(eqn_idx%cont%beg)%sf(j, k, l))
             if (patch_ib(1)%temp /= dflt_real) then
-                q_cons_vf(E_idx)%sf(j, k, l) = alpha * (q_cons_vf(E_idx)%sf(j, k, l) - dynPresOld) + (1._wp - alpha) * &
-                q_cons_vf(contxb)%sf(j, k, l) * cvs(1) * patch_ib(1)%temp + dynPresNew
+                q_cons_vf(eqn_idx%E)%sf(j, k, l) = alpha * (q_cons_vf(eqn_idx%E)%sf(j, k, l) - dynPresOld) + (1._wp - alpha) * &
+                q_cons_vf(eqn_idx%cont%beg)%sf(j, k, l) * cvs(1) * patch_ib(1)%temp + dynPresNew
             else
-                q_cons_vf(E_idx)%sf(j, k, l) = q_cons_vf(E_idx)%sf(j, k, l) - dynPresOld + dynPresNew
+                q_cons_vf(eqn_idx%E)%sf(j, k, l) = q_cons_vf(eqn_idx%E)%sf(j, k, l) - dynPresOld + dynPresNew
             end if
 
-            !q_cons_vf(E_idx)%sf(j, k, l) = domain_points(i)%levelset
+            !q_cons_vf(eqn_idx%E)%sf(j, k, l) = domain_points(i)%levelset
         end do
         $:END_GPU_PARALLEL_LOOP()
 
@@ -480,23 +480,23 @@ contains
 
         if(.not. igr .or. dummy) then
             ! set the Moving IBM interior Pressure Values
-            $:GPU_PARALLEL_LOOP(private='[i,j,k,patch_id,rho]', copyin='[E_idx,momxb]', collapse=3)
+            $:GPU_PARALLEL_LOOP(private='[i,j,k,patch_id,rho]', collapse=3)
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
                         patch_id = ib_markers%sf(j, k, l)
                         if (patch_id /= 0) then
-                            q_prim_vf(E_idx)%sf(j, k, l) = 1._wp
+                            q_prim_vf(eqn_idx%E)%sf(j, k, l) = 1._wp
                             if (patch_ib(patch_id)%moving_ibm > 0) then
                                 rho = 0._wp
                                 do i = 1, num_fluids
-                                    rho = rho + q_prim_vf(contxb + i - 1)%sf(j, k, l)
+                                    rho = rho + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)
                                 end do
 
                                 ! Sets the momentum
                                 do i = 1, num_dims
-                                    q_cons_vf(momxb + i - 1)%sf(j, k, l) = patch_ib(patch_id)%vel(i)*rho
-                                    q_prim_vf(momxb + i - 1)%sf(j, k, l) = patch_ib(patch_id)%vel(i)
+                                    q_cons_vf(eqn_idx%mom%beg + i - 1)%sf(j, k, l) = patch_ib(patch_id)%vel(i)*rho
+                                    q_prim_vf(eqn_idx%mom%beg + i - 1)%sf(j, k, l) = patch_ib(patch_id)%vel(i)
                                 end do
                             end if
                         end if
@@ -533,27 +533,27 @@ contains
                         v = gp_stencil(2, stencil_idx)
                         neum = gp_A_neum(stencil_idx)
                         dirich = gp_A_dirich(stencil_idx)
-                        vel_IP(1) = vel_IP(1) + dirich * q_cons_vf(momxb)%sf(u, v, 0) / q_cons_vf(contxb)%sf(u, v, 0)
-                        vel_IP(2) = vel_IP(2) + dirich * q_cons_vf(momxb + 1)%sf(u, v, 0) / q_cons_vf(contxb)%sf(u, v, 0)
-                        pres_IP = pres_IP + neum * (q_cons_vf(E_idx)%sf(u, v, 0) &
-                            - 0.5_wp / q_cons_vf(contxb)%sf(u, v, 0) * (q_cons_vf(momxb)%sf(u, v, 0) ** 2 + &
-                                    q_cons_vf(momxb + 1)%sf(u, v, 0) ** 2)) / gammas(1)
-                        rho = rho + neum * q_cons_vf(contxb)%sf(u, v, 0)
+                        vel_IP(1) = vel_IP(1) + dirich * q_cons_vf(eqn_idx%mom%beg)%sf(u, v, 0) / q_cons_vf(eqn_idx%cont%beg)%sf(u, v, 0)
+                        vel_IP(2) = vel_IP(2) + dirich * q_cons_vf(eqn_idx%mom%beg + 1)%sf(u, v, 0) / q_cons_vf(eqn_idx%cont%beg)%sf(u, v, 0)
+                        pres_IP = pres_IP + neum * (q_cons_vf(eqn_idx%E)%sf(u, v, 0) &
+                            - 0.5_wp / q_cons_vf(eqn_idx%cont%beg)%sf(u, v, 0) * (q_cons_vf(eqn_idx%mom%beg)%sf(u, v, 0) ** 2 + &
+                                    q_cons_vf(eqn_idx%mom%beg + 1)%sf(u, v, 0) ** 2)) / gammas(1)
+                        rho = rho + neum * q_cons_vf(eqn_idx%cont%beg)%sf(u, v, 0)
                     end do
-                    q_cons_vf(contxb)%sf(j, k, 0) = rho
-                    q_cons_vf(momxb)%sf(j, k, 0) = -vel_IP(1) * rho
-                    q_cons_vf(momxb + 1)%sf(j, k, 0) = -vel_IP(2) * rho
-                    q_cons_vf(E_idx)%sf(j, k, 0) = pres_IP * gammas(1) + 0.5_wp * rho * (vel_IP(1)**2 + vel_IP(2)**2)
+                    q_cons_vf(eqn_idx%cont%beg)%sf(j, k, 0) = rho
+                    q_cons_vf(eqn_idx%mom%beg)%sf(j, k, 0) = -vel_IP(1) * rho
+                    q_cons_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = -vel_IP(2) * rho
+                    q_cons_vf(eqn_idx%E)%sf(j, k, 0) = pres_IP * gammas(1) + 0.5_wp * rho * (vel_IP(1)**2 + vel_IP(2)**2)
 
                     ! TEMPORARY DEBUGGING SECTION
                     if(patch_ib(1)%print_cond) then
-                        q_cons_vf(E_idx)%sf(j, k, 0) = ghost_points(i)%cond
+                        q_cons_vf(eqn_idx%E)%sf(j, k, 0) = ghost_points(i)%cond
 
                         if (mod(i, int(num_gps / 30)) == 0) then
                             do q = 1, ghost_points(i)%M
                                 u = ghost_points(i)%stencil(q, 1)
                                 v = ghost_points(i)%stencil(q, 2)
-                                q_cons_vf(contxb)%sf(u, v, 0) = i
+                                q_cons_vf(eqn_idx%cont%beg)%sf(u, v, 0) = i
                             end do
                         end if
                     end if
@@ -567,20 +567,20 @@ contains
                         v = gp_stencil(2, stencil_idx)
                         neum = gp_A_neum(stencil_idx)
                         dirich = gp_A_dirich(stencil_idx)
-                        vel_IP(1) = vel_IP(1) + dirich * q_prim_vf(momxb)%sf(u, v, 0)
-                        vel_IP(2) = vel_IP(2) + dirich * q_prim_vf(momxb + 1)%sf(u, v, 0)
-                        !T_IP = T_IP + neum * gammas(1) * q_prim_vf(E_idx)%sf(u, v, 0) / (q_prim_vf(contxb)%sf(u, v, 0) * cvs(1))
-                        pres_IP = pres_IP + neum * q_prim_vf(E_idx)%sf(u, v, 0)
-                        alpha_rho_IP(1) = alpha_rho_IP(1) + neum * q_prim_vf(contxb)%sf(u, v, 0)
+                        vel_IP(1) = vel_IP(1) + dirich * q_prim_vf(eqn_idx%mom%beg)%sf(u, v, 0)
+                        vel_IP(2) = vel_IP(2) + dirich * q_prim_vf(eqn_idx%mom%beg + 1)%sf(u, v, 0)
+                        !T_IP = T_IP + neum * gammas(1) * q_prim_vf(eqn_idx%E)%sf(u, v, 0) / (q_prim_vf(eqn_idx%cont%beg)%sf(u, v, 0) * cvs(1))
+                        pres_IP = pres_IP + neum * q_prim_vf(eqn_idx%E)%sf(u, v, 0)
+                        alpha_rho_IP(1) = alpha_rho_IP(1) + neum * q_prim_vf(eqn_idx%cont%beg)%sf(u, v, 0)
                     end do
-                    q_prim_vf(contxb)%sf(j, k, 0) = alpha_rho_IP(1)
-                    q_prim_vf(momxb)%sf(j, k, 0) = -vel_IP(1)
-                    q_prim_vf(momxb + 1)%sf(j, k, 0) = -vel_IP(2)
-                    q_prim_vf(E_idx)%sf(j, k, 0) = pres_IP
-                    q_cons_vf(contxb)%sf(j, k, 0) = alpha_rho_IP(1)
-                    q_cons_vf(momxb)%sf(j, k, 0) = -alpha_rho_IP(1) * vel_IP(1)
-                    q_cons_vf(momxb + 1)%sf(j, k, 0) = -alpha_rho_IP(1) * vel_IP(2)
-                    q_cons_vf(E_idx)%sf(j, k, 0) = pres_IP * gammas(1) + 0.5_wp * alpha_rho_IP(1) * (vel_IP(1) ** 2 + vel_IP(2) ** 2)
+                    q_prim_vf(eqn_idx%cont%beg)%sf(j, k, 0) = alpha_rho_IP(1)
+                    q_prim_vf(eqn_idx%mom%beg)%sf(j, k, 0) = -vel_IP(1)
+                    q_prim_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = -vel_IP(2)
+                    q_prim_vf(eqn_idx%E)%sf(j, k, 0) = pres_IP
+                    q_cons_vf(eqn_idx%cont%beg)%sf(j, k, 0) = alpha_rho_IP(1)
+                    q_cons_vf(eqn_idx%mom%beg)%sf(j, k, 0) = -alpha_rho_IP(1) * vel_IP(1)
+                    q_cons_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = -alpha_rho_IP(1) * vel_IP(2)
+                    q_cons_vf(eqn_idx%E)%sf(j, k, 0) = pres_IP * gammas(1) + 0.5_wp * alpha_rho_IP(1) * (vel_IP(1) ** 2 + vel_IP(2) ** 2)
                 end if
             end do
             $:END_GPU_PARALLEL_LOOP()
@@ -597,7 +597,7 @@ contains
         !         l = innerp%loc(3)
         !
         !         $:GPU_LOOP(parallelism='[seq]')
-        !         do q = momxb, momxe
+        !         do q = eqn_idx%mom%beg, eqn_idx%mom%end
         !             q_cons_vf(q)%sf(j, k, l) = 0._wp
         !         end do
         !     end do
@@ -1284,19 +1284,19 @@ contains
 
                     if (igr) then
                         E_IP = E_IP + coeff* &
-                            q_vf(E_idx)%sf(i, j, k)
+                            q_vf(eqn_idx%E)%sf(i, j, k)
                         rho = 0._wp
                         if (num_fluids == 1) then
-                            alpha_rho_IP(1) = alpha_rho_IP(1) + coeff*q_vf(contxb)%sf(i, j, k)
+                            alpha_rho_IP(1) = alpha_rho_IP(1) + coeff*q_vf(eqn_idx%cont%beg)%sf(i, j, k)
                             alpha_IP(1) = alpha_IP(1) + coeff
-                            rho = q_vf(contxb)%sf(i, j, k)
+                            rho = q_vf(eqn_idx%cont%beg)%sf(i, j, k)
                         else
                             alpha_sum = 0._wp
                             $:GPU_LOOP(parallelism='[seq]')
                             do l = 1, num_fluids - 1
-                                alpha_rho_IP(l) = alpha_rho_IP(l) + coeff*q_vf(contxb + l - 1)%sf(i, j, k)
-                                alpha_IP(l) = alpha_IP(l) + coeff*q_vf(E_idx + l)%sf(i, j, k)
-                                alpha_sum = alpha_sum + q_vf(E_idx + l)%sf(i, j, k)
+                                alpha_rho_IP(l) = alpha_rho_IP(l) + coeff*q_vf(eqn_idx%cont%beg + l - 1)%sf(i, j, k)
+                                alpha_IP(l) = alpha_IP(l) + coeff*q_vf(eqn_idx%E + l)%sf(i, j, k)
+                                alpha_sum = alpha_sum + q_vf(eqn_idx%E + l)%sf(i, j, k)
                                 rho = rho + q_vf(l)%sf(i, j, k)
                             end do
                             alpha_rho_IP(num_fluids) = alpha_rho_IP(num_fluids) + coeff*q_vf(num_fluids)%sf(i, j, k)
@@ -1304,45 +1304,45 @@ contains
                             rho = rho + q_vf(num_fluids)%sf(i, j, k)
                         end if
                         $:GPU_LOOP(parallelism='[seq]')
-                        do q = momxb, momxe
-                            vel_IP(q + 1 - momxb) = vel_IP(q + 1 - momxb) + coeff* &
+                        do q = eqn_idx%mom%beg, eqn_idx%mom%end
+                            vel_IP(q + 1 - eqn_idx%mom%beg) = vel_IP(q + 1 - eqn_idx%mom%beg) + coeff* &
                                                     q_vf(q)%sf(i, j, k) / rho
                         end do
 
                     else
                         pres_IP = pres_IP + coeff* &
-                                q_vf(E_idx)%sf(i, j, k)
+                                q_vf(eqn_idx%E)%sf(i, j, k)
 
                         $:GPU_LOOP(parallelism='[seq]')
-                        do q = momxb, momxe
-                            vel_IP(q + 1 - momxb) = vel_IP(q + 1 - momxb) + coeff* &
+                        do q = eqn_idx%mom%beg, eqn_idx%mom%end
+                            vel_IP(q + 1 - eqn_idx%mom%beg) = vel_IP(q + 1 - eqn_idx%mom%beg) + coeff* &
                                                     q_vf(q)%sf(i, j, k)
                         end do
                         
                         $:GPU_LOOP(parallelism='[seq]')
-                        do l = contxb, contxe
+                        do l = eqn_idx%cont%beg, eqn_idx%cont%end
                             alpha_rho_IP(l) = alpha_rho_IP(l) + coeff* &
                                             q_vf(l)%sf(i, j, k)
                             alpha_IP(l) = alpha_IP(l) + coeff* &
-                                        q_vf(advxb + l - 1)%sf(i, j, k)
+                                        q_vf(eqn_idx%adv%beg + l - 1)%sf(i, j, k)
                         end do
                     end if
 
                     if (surface_tension) then
-                        c_IP = c_IP + coeff*q_vf(c_idx)%sf(i, j, k)
+                        c_IP = c_IP + coeff*q_vf(eqn_idx%c)%sf(i, j, k)
                     end if
 
                     if (bubbles_euler .and. .not. qbmm) then
                         $:GPU_LOOP(parallelism='[seq]')
                         do l = 1, nb
                             if (polytropic) then
-                                r_IP(l) = r_IP(l) + coeff*q_vf(bubxb + (l - 1)*2)%sf(i, j, k)
-                                v_IP(l) = v_IP(l) + coeff*q_vf(bubxb + 1 + (l - 1)*2)%sf(i, j, k)
+                                r_IP(l) = r_IP(l) + coeff*q_vf(eqn_idx%bub%beg + (l - 1)*2)%sf(i, j, k)
+                                v_IP(l) = v_IP(l) + coeff*q_vf(eqn_idx%bub%beg + 1 + (l - 1)*2)%sf(i, j, k)
                             else
-                                r_IP(l) = r_IP(l) + coeff*q_vf(bubxb + (l - 1)*4)%sf(i, j, k)
-                                v_IP(l) = v_IP(l) + coeff*q_vf(bubxb + 1 + (l - 1)*4)%sf(i, j, k)
-                                pb_IP(l) = pb_IP(l) + coeff*q_vf(bubxb + 2 + (l - 1)*4)%sf(i, j, k)
-                                mv_IP(l) = mv_IP(l) + coeff*q_vf(bubxb + 3 + (l - 1)*4)%sf(i, j, k)
+                                r_IP(l) = r_IP(l) + coeff*q_vf(eqn_idx%bub%beg + (l - 1)*4)%sf(i, j, k)
+                                v_IP(l) = v_IP(l) + coeff*q_vf(eqn_idx%bub%beg + 1 + (l - 1)*4)%sf(i, j, k)
+                                pb_IP(l) = pb_IP(l) + coeff*q_vf(eqn_idx%bub%beg + 2 + (l - 1)*4)%sf(i, j, k)
+                                mv_IP(l) = mv_IP(l) + coeff*q_vf(eqn_idx%bub%beg + 3 + (l - 1)*4)%sf(i, j, k)
                             end if
                         end do
                     end if
@@ -1486,20 +1486,20 @@ contains
                             pres(:, :) = 0._wp
              
                             !pres(1, 1) = s_compute_pressure_igr(q_prim_vf, i - 1, j, k, pres(1, 1))
-                            pres(1, 1) = (q_prim_vf(E_idx)%sf(i-1,j,k) - 0.5_wp / q_prim_vf(contxb)%sf(i-1,j,k) &
-                                            * (q_prim_vf(momxb)%sf(i-1,j,k) * q_prim_vf(momxb)%sf(i-1,j,k) + &
-                                            q_prim_vf(momxb + 1)%sf(i-1,j,k) * q_prim_vf(momxb + 1)%sf(i-1,j,k))) / gammas(1)
+                            pres(1, 1) = (q_prim_vf(eqn_idx%E)%sf(i-1,j,k) - 0.5_wp / q_prim_vf(eqn_idx%cont%beg)%sf(i-1,j,k) &
+                                            * (q_prim_vf(eqn_idx%mom%beg)%sf(i-1,j,k) * q_prim_vf(eqn_idx%mom%beg)%sf(i-1,j,k) + &
+                                            q_prim_vf(eqn_idx%mom%beg + 1)%sf(i-1,j,k) * q_prim_vf(eqn_idx%mom%beg + 1)%sf(i-1,j,k))) / gammas(1)
 
-                            pres(1, 2) = (q_prim_vf(E_idx)%sf(i+1,j,k) - 0.5_wp / q_prim_vf(contxb)%sf(i+1,j,k) &
-                                            * (q_prim_vf(momxb)%sf(i+1,j,k) * q_prim_vf(momxb)%sf(i+1,j,k) + &
-                                            q_prim_vf(momxb + 1)%sf(i+1,j,k) * q_prim_vf(momxb + 1)%sf(i+1,j,k))) / gammas(1)
+                            pres(1, 2) = (q_prim_vf(eqn_idx%E)%sf(i+1,j,k) - 0.5_wp / q_prim_vf(eqn_idx%cont%beg)%sf(i+1,j,k) &
+                                            * (q_prim_vf(eqn_idx%mom%beg)%sf(i+1,j,k) * q_prim_vf(eqn_idx%mom%beg)%sf(i+1,j,k) + &
+                                            q_prim_vf(eqn_idx%mom%beg + 1)%sf(i+1,j,k) * q_prim_vf(eqn_idx%mom%beg + 1)%sf(i+1,j,k))) / gammas(1)
 
-                            pres(2, 1) = (q_prim_vf(E_idx)%sf(i,j-1,k) - 0.5_wp / q_prim_vf(contxb)%sf(i,j-1,k) &
-                                            * (q_prim_vf(momxb)%sf(i,j-1,k) * q_prim_vf(momxb)%sf(i,j-1,k) + &
-                                            q_prim_vf(momxb + 1)%sf(i,j-1,k) * q_prim_vf(momxb + 1)%sf(i,j-1,k))) / gammas(1)
-                            pres(2, 2) = (q_prim_vf(E_idx)%sf(i,j+1,k) - 0.5_wp / q_prim_vf(contxb)%sf(i,j+1,k) &
-                                            * (q_prim_vf(momxb)%sf(i,j+1,k) * q_prim_vf(momxb)%sf(i,j+1,k) + &
-                                            q_prim_vf(momxb + 1)%sf(i,j+1,k) * q_prim_vf(momxb + 1)%sf(i,j+1,k))) / gammas(1)
+                            pres(2, 1) = (q_prim_vf(eqn_idx%E)%sf(i,j-1,k) - 0.5_wp / q_prim_vf(eqn_idx%cont%beg)%sf(i,j-1,k) &
+                                            * (q_prim_vf(eqn_idx%mom%beg)%sf(i,j-1,k) * q_prim_vf(eqn_idx%mom%beg)%sf(i,j-1,k) + &
+                                            q_prim_vf(eqn_idx%mom%beg + 1)%sf(i,j-1,k) * q_prim_vf(eqn_idx%mom%beg + 1)%sf(i,j-1,k))) / gammas(1)
+                            pres(2, 2) = (q_prim_vf(eqn_idx%E)%sf(i,j+1,k) - 0.5_wp / q_prim_vf(eqn_idx%cont%beg)%sf(i,j+1,k) &
+                                            * (q_prim_vf(eqn_idx%mom%beg)%sf(i,j+1,k) * q_prim_vf(eqn_idx%mom%beg)%sf(i,j+1,k) + &
+                                            q_prim_vf(eqn_idx%mom%beg + 1)%sf(i,j+1,k) * q_prim_vf(eqn_idx%mom%beg + 1)%sf(i,j+1,k))) / gammas(1)
                         end if
 
                         do fluid_idx = 0, num_fluids - 1
@@ -1508,8 +1508,8 @@ contains
                                 local_force_contribution(1) = local_force_contribution(1) - (pres(1,2) - pres(1,1))/(2._wp*dx) ! force is the negative pressure gradient
                                 local_force_contribution(2) = local_force_contribution(2) - (pres(2,2) - pres(2,1))/(2._wp*dy)
                             else
-                                local_force_contribution(1) = local_force_contribution(1) - (q_prim_vf(E_idx + fluid_idx)%sf(i + 1, j, k) - q_prim_vf(E_idx + fluid_idx)%sf(i - 1, j, k))/(2._wp*dx) ! force is the negative pressure gradient
-                                local_force_contribution(2) = local_force_contribution(2) - (q_prim_vf(E_idx + fluid_idx)%sf(i, j + 1, k) - q_prim_vf(E_idx + fluid_idx)%sf(i, j - 1, k))/(2._wp*dy)
+                                local_force_contribution(1) = local_force_contribution(1) - (q_prim_vf(eqn_idx%E + fluid_idx)%sf(i + 1, j, k) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i - 1, j, k))/(2._wp*dx) ! force is the negative pressure gradient
+                                local_force_contribution(2) = local_force_contribution(2) - (q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, j + 1, k) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, j - 1, k))/(2._wp*dy)
                             end if
                             cell_volume = abs(dx*dy)
                             ! add the 3D component of the pressure gradient, if we are working in 3 dimensions
@@ -1531,7 +1531,7 @@ contains
                                 if(igr .or. dummy) then
                                     dynamic_viscosity = dynamic_viscosity + 1.0_wp * dynamic_viscosities(fluid_idx)
                                 else
-                                    dynamic_viscosity = dynamic_viscosity + (q_prim_vf(fluid_idx + advxb - 1)%sf(i, j, k)*dynamic_viscosities(fluid_idx))
+                                    dynamic_viscosity = dynamic_viscosity + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i, j, k)*dynamic_viscosities(fluid_idx))
                                 end if
                             end do
 
@@ -1680,13 +1680,13 @@ contains
     !                     local_torque_contribution(:) = 0._wp
     !                     do fluid_idx = 0, num_fluids - 1
     !                         ! Get the pressure contribution to force via a finite difference to compute the 2D components of the gradient of the pressure and cell volume
-    !                         local_force_contribution(1) = local_force_contribution(1) - (q_prim_vf(E_idx + fluid_idx)%sf(i + 1, j, k) - q_prim_vf(E_idx + fluid_idx)%sf(i - 1, j, k))/(2._wp*dx) ! force is the negative pressure gradient
-    !                         local_force_contribution(2) = local_force_contribution(2) - (q_prim_vf(E_idx + fluid_idx)%sf(i, j + 1, k) - q_prim_vf(E_idx + fluid_idx)%sf(i, j - 1, k))/(2._wp*dy)
+    !                         local_force_contribution(1) = local_force_contribution(1) - (q_prim_vf(eqn_idx%E + fluid_idx)%sf(i + 1, j, k) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i - 1, j, k))/(2._wp*dx) ! force is the negative pressure gradient
+    !                         local_force_contribution(2) = local_force_contribution(2) - (q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, j + 1, k) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, j - 1, k))/(2._wp*dy)
     !                         cell_volume = abs(dx*dy)
     !                         ! add the 3D component of the pressure gradient, if we are working in 3 dimensions
     !                         if (num_dims == 3) then
     !                             dz = z_cc(k + 1) - z_cc(k)
-    !                             local_force_contribution(3) = local_force_contribution(3) - (q_prim_vf(E_idx + fluid_idx)%sf(i, j, k + 1) - q_prim_vf(E_idx + fluid_idx)%sf(i, j, k - 1))/(2._wp*dz)
+    !                             local_force_contribution(3) = local_force_contribution(3) - (q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, j, k + 1) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, j, k - 1))/(2._wp*dz)
     !                             cell_volume = abs(cell_volume*dz)
     !                         end if
     !                     end do
@@ -1700,8 +1700,8 @@ contains
     !                         dynamic_viscosity = 0._wp
     !                         do fluid_idx = 1, num_fluids
     !                             ! local dynamic viscosity is the dynamic viscosity of the fluid times alpha of the fluid
-    !                             dynamic_viscosity(1) = dynamic_viscosity(1) + (q_prim_vf(fluid_idx + advxb - 1)%sf(i - 1, j, k)*dynamic_viscosities(fluid_idx))
-    !                             dynamic_viscosity(2) = dynamic_viscosity(2) + (q_prim_vf(fluid_idx + advxb - 1)%sf(i + 1, j, k)*dynamic_viscosities(fluid_idx))
+    !                             dynamic_viscosity(1) = dynamic_viscosity(1) + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i - 1, j, k)*dynamic_viscosities(fluid_idx))
+    !                             dynamic_viscosity(2) = dynamic_viscosity(2) + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i + 1, j, k)*dynamic_viscosities(fluid_idx))
     !                         end do
     !
     !                         ! get the linear force component first
@@ -1720,8 +1720,8 @@ contains
     !
     !                         dynamic_viscosity = 0._wp
     !                         do fluid_idx = 1, num_fluids
-    !                             dynamic_viscosity(1) = dynamic_viscosity(1) + (q_prim_vf(fluid_idx + advxb - 1)%sf(i, j - 1, k)*dynamic_viscosities(fluid_idx))
-    !                             dynamic_viscosity(2) = dynamic_viscosity(2) + (q_prim_vf(fluid_idx + advxb - 1)%sf(i, j + 1, k)*dynamic_viscosities(fluid_idx))
+    !                             dynamic_viscosity(1) = dynamic_viscosity(1) + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i, j - 1, k)*dynamic_viscosities(fluid_idx))
+    !                             dynamic_viscosity(2) = dynamic_viscosity(2) + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i, j + 1, k)*dynamic_viscosities(fluid_idx))
     !                         end do
     !
     !                         call s_compute_viscous_stress_tensor(viscous_stress_div_1, q_prim_vf, dynamic_viscosity(1), i, j - 1, k)
@@ -1739,8 +1739,8 @@ contains
     !                         if (num_dims == 3) then
     !                             dynamic_viscosity = 0._wp
     !                             do fluid_idx = 1, num_fluids
-    !                                 dynamic_viscosity(1) = dynamic_viscosity(1) + (q_prim_vf(fluid_idx + advxb - 1)%sf(i, j, k - 1)*dynamic_viscosities(fluid_idx))
-    !                                 dynamic_viscosity(2) = dynamic_viscosity(2) + (q_prim_vf(fluid_idx + advxb - 1)%sf(i, j, k + 1)*dynamic_viscosities(fluid_idx))
+    !                                 dynamic_viscosity(1) = dynamic_viscosity(1) + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i, j, k - 1)*dynamic_viscosities(fluid_idx))
+    !                                 dynamic_viscosity(2) = dynamic_viscosity(2) + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i, j, k + 1)*dynamic_viscosities(fluid_idx))
     !                             end do
     !
     !                             call s_compute_viscous_stress_tensor(viscous_stress_div_1, q_prim_vf, dynamic_viscosity(1), i, j, k - 1)
