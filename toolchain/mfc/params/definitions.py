@@ -883,6 +883,8 @@ def _load():
     for n in ["mhd", "hyper_cleaning"]:
         _r(n, LOG, {"mhd"})
 
+    _r("pr", REAL, {"heat conduction"}, math=r"\f$pr$\f")
+
     # Bubbles
     _r("R0ref", REAL, {"bubbles"}, math=r"\f$R_0\f$")
     _r("nb", REAL, {"bubbles"}, math=r"\f$N_b\f$")

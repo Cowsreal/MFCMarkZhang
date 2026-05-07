@@ -758,7 +758,6 @@ contains
     subroutine s_find_ghost_points(ghost_points_in)
 
         type(ghost_point), dimension(num_gps), intent(INOUT) :: ghost_points_in
-        type(ghost_point), dimension(num_inner_gps), intent(INOUT) :: inner_points_in
         integer :: i, j, k, ii, jj, kk, gp_layers_z, first_layer_z !< Iterator variables
         integer :: xp, yp, zp !< periodicities
         integer :: count, count_i, local_idx
@@ -1349,7 +1348,7 @@ contains
 
                     if (qbmm) then
                         do l = 1, nb*nmom
-                            nmom_IP(l) = nmom_IP(l) + coeff*q_prim_vf(eqn_idx%bub%beg - 1 + l)%sf(i, j, k)
+                            nmom_IP(l) = nmom_IP(l) + coeff*q_vf(eqn_idx%bub%beg - 1 + l)%sf(i, j, k)
                         end do
                         if (.not. polytropic) then
                             do q = 1, nb
@@ -1424,13 +1423,6 @@ contains
         type(physical_parameters), dimension(1:num_fluids), intent(in) :: fluid_pp
         integer                                                        :: i, j, k, l, encoded_ib_idx, ib_idx, fluid_idx
         real(wp), dimension(num_ibs, 3)                                :: forces, torques
-        real(wp), dimension(1:3,1:3)                                   :: viscous_stress_div, viscous_stress_div_1, &
-             & viscous_stress_div_2  ! viscous stress tensor with temp vectors to hold divergence calculations
-        real(wp), dimension(1:3) :: local_force_contribution, radial_vector, local_torque_contribution
-        real(wp)                 :: cell_volume, dx, dy, dz, dynamic_viscosity
-
-        integer :: gp_id, i, j, k, l, q, ib_idx, fluid_idx
-        real(wp), dimension(num_ibs, 3) :: forces, torques
         real(wp), dimension(num_ibs, 3) :: forces_viscous
         real(wp), dimension(1:3, 1:3) :: viscous_stress_div, viscous_stress_div_1, viscous_stress_div_2, viscous_cross_1, viscous_cross_2 ! viscous stress tensor with temp vectors to hold divergence calculations
         real(wp), dimension(1:3) :: local_force_contribution, radial_vector, local_torque_contribution, vel
@@ -1984,16 +1976,6 @@ contains
 
     end subroutine s_wrap_periodic_ibs
 
-    !> @brief Computes the cross product c = a x b of two 3D vectors.
-    subroutine s_cross_product(a, b, c)
-        $:GPU_ROUTINE(parallelism='[seq]')
-        real(wp), intent(in) :: a(3), b(3)
-        real(wp), intent(out) :: c(3)
-
-        c(1) = a(2)*b(3) - a(3)*b(2)
-        c(2) = a(3)*b(1) - a(1)*b(3)
-        c(3) = a(1)*b(2) - a(2)*b(1)
-    end subroutine s_cross_product
     !
     ! elemental pure function get_morton_idx_2D(i, j, k) result(idx)
     !     integer, intent(in) :: i, j, k

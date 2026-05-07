@@ -580,6 +580,7 @@ contains
             igr_pres_lim = .false.
             viscous = .false.
             igr_iter_solver = 1
+            pr = 0._wp
         #:endif
 
         chem_params%diffusion = .false.

@@ -103,7 +103,7 @@ contains
             nb, mapped_weno, wenoz, teno, wenoz_q, weno_order, &
             num_fluids, mhd, relativity, igr_order, viscous, &
             heat_conduction, igr_iter_solver, igr, igr_pres_lim, &
-            recon_type, muscl_order, muscl_lim, &
+            recon_type, muscl_order, muscl_lim, pr,&
         #:endif
         Ca, Web, Re_inv, acoustic_source, acoustic, num_source, polytropic, thermal, integral, integral_wrt, num_integrals, &
             & polydisperse, poly_sigma, qbmm, relax, relax_model, palpha_eps, ptgalpha_eps, file_per_process, sigma, pi_fac, &
@@ -669,6 +669,7 @@ contains
 
         if (t_step == 0 .and. ib) then
             if(igr) then
+                print *, "smoothing"
                 call s_smooth_ib_boundaries(bc_type, q_cons_ts(1)%vf)
                 !call s_save_data(t_step, start1, finish1, io_time_avg, nt)
             end if
@@ -678,6 +679,7 @@ contains
             else
                 call s_populate_variables_buffers(bc_type, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
             end if
+            print *, "begin correct state"
             call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
             print *, "finished correct state"
             if(igr) then
