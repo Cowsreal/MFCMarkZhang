@@ -389,7 +389,6 @@ class Case:
 #:set igr_order             = {self.params.get("igr_order", 3)}
 #:set viscous               = {viscous}
 #:set heat_conduction = {heat_conduction}
-#:set pr               = {self.params.get("pr", 0)}
 """
 
         else:

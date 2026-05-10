@@ -460,16 +460,16 @@ contains
                         F_R = F_R + coeff_R(q)*jac(j + q, k, l)
 
                         if (pr /= 0._wp) then
-                                rho_L = 0._wp
-                                rho_R = 0._wp
-                                $:GPU_LOOP(parallelism='[seq]')
-                                do r = 1, num_fluids
-                                    rho_L = rho_L + q_cons_vf(r)%sf(j + q - 1, k, l)
-                                    rho_R = rho_R + q_cons_vf(r)%sf(j + q + 1, k, l)
-                                end do
-                                hflux_R = hflux_R + coeff_R(q) * pr * (1 / (2._wp * dx(j))) * gammas(1) * (&
-                                        jac(j + q + 1, k, l) / (rho_R * cvs(1)) - &
-                                        jac(j + q - 1, k, l) / (rho_L * cvs(1)))
+                            rho_L = 0._wp
+                            rho_R = 0._wp
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do r = 1, num_fluids
+                                rho_L = rho_L + q_cons_vf(r)%sf(j + q - 1, k, l)
+                                rho_R = rho_R + q_cons_vf(r)%sf(j + q + 1, k, l)
+                            end do
+                            hflux_R = hflux_R + coeff_R(q) * pr * (1 / (2._wp * dx(j))) * gammas(1) * (&
+                                    jac(j + q + 1, k, l) / (rho_R * cvs(1)) - &
+                                    jac(j + q - 1, k, l) / (rho_L * cvs(1)))
                         end if
                     end do
 
@@ -535,9 +535,8 @@ contains
             real(wp), dimension(num_dims)           :: vel_L, vel_R
             real(wp), dimension(num_dims, num_dims) :: dvel
             real(wp), dimension(num_dims) :: dvel_small
-            real(wp) :: dT_small
-            real(wp) :: hflux_L, hflux_R
         #:endif
+            real(wp) :: hflux_L, hflux_R
 
         if (idir == 1) then
             if (p == 0) then

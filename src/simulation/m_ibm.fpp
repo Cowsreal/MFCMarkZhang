@@ -88,7 +88,7 @@ contains
     impure subroutine s_ibm_setup()
 
         integer :: i, j, k
-        integer :: max_num_gps, max_num_inner_gps
+        integer :: max_num_gps
 
         call nvtxStartRange("SETUP-IBM-MODULE")
 
@@ -134,11 +134,11 @@ contains
         ! set the size of the ghost point arrays to be the amount of points total, plus a factor of 2 buffer
         $:GPU_UPDATE(device='[num_gps, num_inner_gps]')
         if (moving_immersed_boundary_flag) then
-            @:ALLOCATE(ghost_points(1:int((max_num_gps + max_num_inner_gps) * 2.0)))
-            @:ALLOCATE(inner_points(1:int((max_num_gps + max_num_inner_gps) * 2.0)))
+            @:ALLOCATE(ghost_points(1:int((max_num_gps) * 2.0)))
+            @:ALLOCATE(inner_points(1:int((max_num_gps) * 2.0)))
         else
-            @:ALLOCATE(ghost_points(1:int(max_num_gps + max_num_inner_gps)))
-            @:ALLOCATE(inner_points(1:int(max_num_gps + max_num_inner_gps)))
+            @:ALLOCATE(ghost_points(1:int(max_num_gps)))
+            @:ALLOCATE(inner_points(1:int(max_num_gps)))
         end if
 
         $:GPU_ENTER_DATA(copyin='[ghost_points]')
@@ -541,8 +541,8 @@ contains
                         rho = rho + neum * q_cons_vf(eqn_idx%cont%beg)%sf(u, v, 0)
                     end do
                     q_cons_vf(eqn_idx%cont%beg)%sf(j, k, 0) = rho
-                    q_cons_vf(eqn_idx%mom%beg)%sf(j, k, 0) = -vel_IP(1) * rho
-                    q_cons_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = -vel_IP(2) * rho
+                    q_cons_vf(eqn_idx%mom%beg)%sf(j, k, 0) = vel_IP(1) * rho
+                    q_cons_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = vel_IP(2) * rho
                     q_cons_vf(eqn_idx%E)%sf(j, k, 0) = pres_IP * gammas(1) + 0.5_wp * rho * (vel_IP(1)**2 + vel_IP(2)**2)
 
                     ! TEMPORARY DEBUGGING SECTION
@@ -574,12 +574,12 @@ contains
                         alpha_rho_IP(1) = alpha_rho_IP(1) + neum * q_prim_vf(eqn_idx%cont%beg)%sf(u, v, 0)
                     end do
                     q_prim_vf(eqn_idx%cont%beg)%sf(j, k, 0) = alpha_rho_IP(1)
-                    q_prim_vf(eqn_idx%mom%beg)%sf(j, k, 0) = -vel_IP(1)
-                    q_prim_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = -vel_IP(2)
+                    q_prim_vf(eqn_idx%mom%beg)%sf(j, k, 0) = vel_IP(1)
+                    q_prim_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = vel_IP(2)
                     q_prim_vf(eqn_idx%E)%sf(j, k, 0) = pres_IP
                     q_cons_vf(eqn_idx%cont%beg)%sf(j, k, 0) = alpha_rho_IP(1)
-                    q_cons_vf(eqn_idx%mom%beg)%sf(j, k, 0) = -alpha_rho_IP(1) * vel_IP(1)
-                    q_cons_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = -alpha_rho_IP(1) * vel_IP(2)
+                    q_cons_vf(eqn_idx%mom%beg)%sf(j, k, 0) = vel_IP(1) * alpha_rho_IP(1)
+                    q_cons_vf(eqn_idx%mom%beg + 1)%sf(j, k, 0) = vel_IP(2) * alpha_rho_IP(1)
                     q_cons_vf(eqn_idx%E)%sf(j, k, 0) = pres_IP * gammas(1) + 0.5_wp * alpha_rho_IP(1) * (vel_IP(1) ** 2 + vel_IP(2) ** 2)
                 end if
             end do

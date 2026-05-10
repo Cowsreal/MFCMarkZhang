@@ -27,6 +27,7 @@ module m_rhs
     use m_ibm
     use m_nvtx
     use m_boundary_common
+    use m_heat_conduction
     use m_helper
     use m_surface_tension
     use m_body_forces
@@ -199,7 +200,7 @@ contains
                                    & idwbuff(3)%beg:idwbuff(3)%end))
                     end do
 
-                    if (viscous .or. surface_tension) then
+                    if (heat_conduction .or. viscous .or. surface_tension) then
                         do l = eqn_idx%mom%beg, eqn_idx%E
                             @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                        & idwbuff(3)%beg:idwbuff(3)%end))
@@ -734,6 +735,7 @@ contains
                                       & q_prim_qp%vf, flux_n(id)%vf, flux_src_n(id)%vf, flux_gsrc_n(id)%vf, id, irx, iry, irz)
                 call nvtxEndRange
 
+
                 ! Additional physics and source terms RHS addition for advection source
                 call nvtxStartRange("RHS-ADVECTION-SRC")
                 call s_compute_advection_source_term(id, rhs_vf, q_cons_qp, q_prim_qp, flux_src_n(id))
@@ -750,9 +752,15 @@ contains
                     call s_compute_chemistry_diffusion_flux(id, q_prim_qp%vf, flux_src_n(id)%vf, irx, iry, irz, q_T_sf)
                     call nvtxEndRange
                 end if
+                if(heat_conduction) then
+                    call nvtxStartRange("RHS-HEAT_CONDUCTION")
+                    call s_compute_heat_conduction_flux(q_prim_qp%vf, flux_src_n(id)%vf, id, irx, iry, irz)
+                    call nvtxEndRange
+                end if
+
 
                 ! Viscous stress contribution to RHS
-                if (viscous .or. surface_tension .or. chem_params%diffusion) then
+                if (heat_conduction .or. viscous .or. surface_tension .or. chem_params%diffusion) then
                     call nvtxStartRange("RHS-ADD-PHYSICS")
                     call s_compute_additional_physics_rhs(id, q_prim_qp%vf, rhs_vf, flux_src_n(id)%vf, dq_prim_dx_qp(1)%vf, &
                                                           & dq_prim_dy_qp(1)%vf, dq_prim_dz_qp(1)%vf)
@@ -846,19 +854,19 @@ contains
         ! END: Additional physics and source terms
 
 
-        if (.not. igr) then
-        $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
-        do l = idwbuff(3)%beg, idwbuff(3)%end
-            do k = idwbuff(2)%beg, idwbuff(2)%end
-                do j = idwbuff(1)%beg, idwbuff(1)%end
-                    flux_src_n(1)%vf(eqn_idx%E)%sf(j, k, l) = sqrt( &
-                    flux_src_n(1)%vf(eqn_idx%E)%sf(j, k, l)**2 +&
-                    flux_src_n(2)%vf(eqn_idx%E)%sf(j, k, l)**2)
-                end do
-            end do
-        end do
-        $:END_GPU_PARALLEL_LOOP()
-        end if
+        ! if (.not. igr) then
+        ! $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
+        ! do l = idwbuff(3)%beg, idwbuff(3)%end
+        !     do k = idwbuff(2)%beg, idwbuff(2)%end
+        !         do j = idwbuff(1)%beg, idwbuff(1)%end
+        !             flux_src_n(1)%vf(eqn_idx%E)%sf(j, k, l) = sqrt( &
+        !             flux_src_n(1)%vf(eqn_idx%E)%sf(j, k, l)**2 +&
+        !             flux_src_n(2)%vf(eqn_idx%E)%sf(j, k, l)**2)
+        !         end do
+        !     end do
+        ! end do
+        ! $:END_GPU_PARALLEL_LOOP()
+        ! end if
 
         if (run_time_info .or. probe_wrt .or. ib .or. bubbles_lagrange) then
             if (.not. igr .or. dummy) then

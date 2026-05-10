@@ -103,7 +103,7 @@ contains
             nb, mapped_weno, wenoz, teno, wenoz_q, weno_order, &
             num_fluids, mhd, relativity, igr_order, viscous, &
             heat_conduction, igr_iter_solver, igr, igr_pres_lim, &
-            recon_type, muscl_order, muscl_lim, pr,&
+            recon_type, muscl_order, muscl_lim,&
         #:endif
         Ca, Web, Re_inv, acoustic_source, acoustic, num_source, polytropic, thermal, integral, integral_wrt, num_integrals, &
             & polydisperse, poly_sigma, qbmm, relax, relax_model, palpha_eps, ptgalpha_eps, file_per_process, sigma, pi_fac, &
@@ -111,7 +111,7 @@ contains
             & g_y, g_z, n_start, t_save, t_stop, cfl_adap_dt, cfl_const_dt, cfl_target, surface_tension, bubbles_lagrange, &
             & lag_params, hyperelasticity, R0ref, num_bc_patches, Bx0, cont_damage, tau_star, cont_damage_s, alpha_bar, &
             & hyper_cleaning, hyper_cleaning_speed, hyper_cleaning_tau, alf_factor, num_igr_iters, num_igr_warm_start_iters, &
-            & int_comp, ic_eps, ic_beta, nv_uvm_out_of_core, nv_uvm_igr_temps_on_gpu, nv_uvm_pref_gpu, down_sample, fft_wrt
+            & int_comp, ic_eps, ic_beta, nv_uvm_out_of_core, nv_uvm_igr_temps_on_gpu, nv_uvm_pref_gpu, down_sample, fft_wrt, pr
 
         inquire (FILE=trim(file_path), EXIST=file_exist)
 
@@ -665,14 +665,13 @@ contains
             end do
         end if
 
-        mytime = mytime + dt
-
         if (t_step == 0 .and. ib) then
-            if(igr) then
                 print *, "smoothing"
                 call s_smooth_ib_boundaries(bc_type, q_cons_ts(1)%vf)
-                !call s_save_data(t_step, start1, finish1, io_time_avg, nt)
+                if(.not. igr) then
+                call s_convert_conservative_to_primitive_variables(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, idwint)
             end if
+                !call s_save_data(t_step, start1, finish1, io_time_avg, nt)
             !call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
             if(igr) then
                 call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
@@ -686,6 +685,8 @@ contains
                 call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
                 !call s_save_data(t_step, start1, finish1, io_time_avg, nt)
             end if
+                call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
+                call s_save_data(t_step, start1, finish1, io_time_avg, nt)
 
             print *, "saved here"
         end if

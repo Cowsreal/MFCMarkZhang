@@ -113,7 +113,6 @@ module m_global_parameters
         integer, parameter :: igr_iter_solver = ${igr_iter_solver}$ !< IGR elliptic solver
         integer, parameter :: igr_order = ${igr_order}$             !< Reconstruction order for IGR
         logical, parameter :: igr = (${igr}$ /= 0)                  !< use information geometric regularization
-        real(wp), parameter :: pr = ${pr}$
         logical, parameter :: igr_pres_lim = (${igr_pres_lim}$ /= 0)!< Limit to positive pressures for IGR
         logical, parameter :: viscous = (${viscous}$ /= 0)          !< Viscous effects
         logical, parameter :: heat_conduction = (${heat_conduction}$ /= 0)          !< Viscous effects
@@ -139,9 +138,9 @@ module m_global_parameters
         logical :: igr_pres_lim   !< Limit to positive pressures for IGR
         logical :: viscous        !< Viscous effects
         logical :: heat_conduction
-        real(wp) :: pr
     #:endif
 
+        real(wp) :: pr
     !> @name Variables for our of core IGR computation on NVIDIA
     !> @{
     logical :: nv_uvm_out_of_core       !< Enable out-of-core storage of q_cons_ts(2) in timestepping (default FALSE)
@@ -201,7 +200,7 @@ module m_global_parameters
         $:GPU_DECLARE(create='[recon_type, muscl_order, muscl_polyn, muscl_lim]')
     #:endif
 
-    $:GPU_DECLARE(create='[muscl_eps]')
+    $:GPU_DECLARE(create='[muscl_eps,pr]')
     $:GPU_DECLARE(create='[mpp_lim, model_eqns, mixture_err, alt_soundspeed]')
     $:GPU_DECLARE(create='[avg_state, mp_weno, weno_eps, teno_CT, hypoelasticity]')
     $:GPU_DECLARE(create='[hyperelasticity, hyper_model, elasticity, low_Mach]')
@@ -569,6 +568,7 @@ contains
         num_igr_iters = dflt_num_igr_iters
         num_igr_warm_start_iters = dflt_num_igr_warm_start_iters
         alf_factor = dflt_alf_factor
+            pr = 0._wp
 
         #:if not MFC_CASE_OPTIMIZATION
             mapped_weno = .false.
@@ -580,7 +580,6 @@ contains
             igr_pres_lim = .false.
             viscous = .false.
             igr_iter_solver = 1
-            pr = 0._wp
         #:endif
 
         chem_params%diffusion = .false.
@@ -1226,7 +1225,7 @@ contains
         $:GPU_UPDATE(device='[alt_soundspeed, acoustic_source, num_source]')
         $:GPU_UPDATE(device='[dt, sys_size, buff_size, pref, rhoref, eqn_idx, mpp_lim, bubbles_euler, hypoelasticity, &
                      & alt_soundspeed, avg_state, model_eqns, mixture_err, grid_geometry, cyl_coord, mp_weno, weno_eps, teno_CT, &
-                     & hyperelasticity, hyper_model, elasticity, low_Mach]')
+                     & hyperelasticity, hyper_model, elasticity, low_Mach,pr]')
 
         $:GPU_UPDATE(device='[Bx0]')
 

@@ -139,7 +139,7 @@ contains
 #elif defined (MFC_SIMULATION)
                     MPI_IO_DATA%var(sys_size + (i - 1)*nnode + j)%sf => pb_ts(1)%sf(0:m, 0:n, 0:p, j, i)
                     MPI_IO_DATA%var(sys_size + (i - 1)*nnode + j + nb*nnode)%sf => mv_ts(1)%sf(0:m, 0:n, 0:p, j, i)
-             !       MPI_IO_DATA%var(1)%sf => flux_vf(1)%vf(E_idx)%sf(0:m, 0:n, 0:p)
+                    MPI_IO_DATA%var(1)%sf => flux_vf(1)%vf(eqn_idx%E)%sf(0:m, 0:n, 0:p)
 #endif
                 end do
             end do

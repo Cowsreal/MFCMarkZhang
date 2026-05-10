@@ -19,6 +19,7 @@ module m_riemann_solvers
     use m_surface_tension
     use m_helper_basic
     use m_chemistry
+    use m_ibm
     use m_thermochem, only: gas_constant, get_mixture_molecular_weight, get_mixture_specific_heat_cv_mass, &
         & get_mixture_energy_mass, get_species_specific_heats_r, get_species_enthalpies_rt, get_mixture_specific_heat_cp_mass
 
@@ -3327,10 +3328,6 @@ contains
             end if
         end if
         
-        if(heat_conduction) then
-            call s_compute_heat_conduction_flux(q_prim_vf, flux_src_vf, norm_dir)
-        end if
-
         if (surface_tension) then
             call s_compute_capillary_source_flux(vel_src_rsx_vf, vel_src_rsy_vf, vel_src_rsz_vf, flux_src_vf, norm_dir, isx, isy, &
                                                  & isz)
@@ -4163,8 +4160,8 @@ contains
 
         & dvelR_dy_vf, dvelR_dz_vf, flux_src_vf, norm_dir, ix, iy, iz)
 
-        type(scalar_field), dimension(num_dims), intent(in)    :: velL_vf, velR_vf
-        type(scalar_field), dimension(num_dims), intent(in)    :: dvelL_dx_vf, dvelR_dx_vf
+        type(scalar_field), dimension(:), intent(in)    :: velL_vf, velR_vf
+        type(scalar_field), dimension(:), intent(in)    :: dvelL_dx_vf, dvelR_dx_vf
         type(scalar_field), dimension(num_dims), intent(in)    :: dvelL_dy_vf, dvelR_dy_vf
         type(scalar_field), dimension(num_dims), intent(in)    :: dvelL_dz_vf, dvelR_dz_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: flux_src_vf
@@ -4336,7 +4333,7 @@ contains
         & dvelR_dz_vf, flux_src_vf, norm_dir)
 
         ! Arguments
-        type(scalar_field), dimension(num_dims), intent(in)    :: dvelL_dx_vf, dvelR_dx_vf
+        type(scalar_field), dimension(:), intent(in)    :: dvelL_dx_vf, dvelR_dx_vf
         type(scalar_field), dimension(num_dims), intent(in)    :: dvelL_dy_vf, dvelR_dy_vf
         type(scalar_field), dimension(num_dims), intent(in)    :: dvelL_dz_vf, dvelR_dz_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: flux_src_vf
@@ -4511,46 +4508,6 @@ contains
         end do
 
     end subroutine s_calculate_bulk_stress_tensor
-
-    subroutine s_compute_heat_conduction_flux(q_prim_vf, flux_src_vf, norm_dir)
-
-        type(scalar_field), dimension(sys_size), intent(inout) :: flux_src_vf
-        type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
-        integer, intent(in) :: norm_dir
-
-        integer, dimension(2) :: offsets
-        integer :: i, j, k, l
-        real(wp) :: p_L, p_R, rho_L, rho_R, dT_dx
-        real(wp) :: dx
-
-        offsets(1) = 0
-        offsets(2) = 0
-
-        offsets(norm_dir) = 1
-
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[p_L,p_R,rho_L,rho_R,dx,dT_dx]', copyin='[norm_dir,offsets]')
-        do l = isz%beg, isz%end
-            do k = isy%beg, isy%end
-                do j = isx%beg, isx%end
-                    select case (norm_dir)
-                        case (1)
-                            dx = x_cc(j + 1) - x_cc(j)
-                        case (2)
-                            dx = y_cc(k + 1) - y_cc(k)
-                    end select
-
-                    p_L = q_prim_vf(eqn_idx%E)%sf(j, k, l)
-                    p_R = q_prim_vf(eqn_idx%E)%sf(j + offsets(1), k + offsets(2), l)
-                    rho_L = q_prim_vf(eqn_idx%cont%beg)%sf(j, k, l)
-                    rho_R = q_prim_vf(eqn_idx%cont%beg)%sf(j + offsets(1), k + offsets(2), l)
-                    dT_dx = gammas(1) * (p_R / (rho_R * cvs(1)) - p_L / (rho_L * cvs(1))) / dx
-                    flux_src_vf(eqn_idx%E)%sf(j, k, l) = flux_src_vf(eqn_idx%E)%sf(j, k, l) - kaps(1) * dT_dx
-                end do
-            end do
-        end do
-        $:END_GPU_PARALLEL_LOOP()
-
-    end subroutine s_compute_heat_conduction_flux
 
     !> Deallocation and/or disassociation procedures that are needed to finalize the selected Riemann problem solver
     subroutine s_finalize_riemann_solver(flux_vf, flux_src_vf, flux_gsrc_vf, norm_dir)

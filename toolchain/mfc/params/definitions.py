@@ -368,7 +368,7 @@ def _auto_describe(name: str) -> str:
 CASE_OPT_PARAMS = {
     "mapped_weno", "wenoz", "teno", "wenoz_q", "nb", "weno_order",
     "num_fluids", "mhd", "relativity", "igr_order", "viscous",
-    "heat_conduction","igr_iter_solver", "igr", "igr_pres_lim", "recon_type", "pr",
+    "heat_conduction","igr_iter_solver", "igr", "igr_pres_lim", "recon_type",
     "muscl_order", "muscl_lim",
 }
 
