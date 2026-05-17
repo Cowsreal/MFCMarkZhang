@@ -108,7 +108,6 @@ contains
 
         integer, dimension(num_dims) :: sizes_glb, sizes_loc
         integer, dimension(1) :: airfoil_glb, airfoil_loc, airfoil_start
-        integer, dimension(num_dims)                        :: sizes_glb, sizes_loc
 
 #ifdef MFC_MPI
         integer :: i, j

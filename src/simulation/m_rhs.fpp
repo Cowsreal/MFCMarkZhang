@@ -1397,12 +1397,12 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             end if
 
-            if ((surface_tension .or. viscous) .or. chem_params%diffusion) then
+            if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. heat_conduction) then
                 $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
-                            if (surface_tension .or. viscous) then
+                            if (surface_tension .or. viscous .or. heat_conduction) then
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do i = eqn_idx%mom%beg, eqn_idx%E
                                     rhs_vf(i)%sf(j, k, l) = rhs_vf(i)%sf(j, k, l) + 1._wp/dx(j)*(flux_src_n_in(i)%sf(j - 1, k, &
@@ -1482,12 +1482,12 @@ contains
                 end do
                 $:END_GPU_PARALLEL_LOOP()
             else
-                if ((surface_tension .or. viscous) .or. chem_params%diffusion) then
+                if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. heat_conduction) then
                     $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
                     do l = 0, p
                         do k = 0, n
                             do j = 0, m
-                                if (surface_tension .or. viscous) then
+                                if (surface_tension .or. viscous .or. heat_conduction) then
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do i = eqn_idx%mom%beg, eqn_idx%E
                                         rhs_vf(i)%sf(j, k, l) = rhs_vf(i)%sf(j, k, l) + 1._wp/dy(k)*(flux_src_n_in(i)%sf(j, &
@@ -1574,12 +1574,12 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             end if
 
-            if ((surface_tension .or. viscous) .or. chem_params%diffusion) then
+            if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. heat_conduction) then
                 $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
-                            if (surface_tension .or. viscous) then
+                            if (surface_tension .or. viscous .or. heat_conduction) then
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do i = eqn_idx%mom%beg, eqn_idx%E
                                     rhs_vf(i)%sf(j, k, l) = rhs_vf(i)%sf(j, k, l) + 1._wp/dz(l)*(flux_src_n_in(i)%sf(j, k, &

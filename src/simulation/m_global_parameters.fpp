@@ -449,10 +449,6 @@ module m_global_parameters
     real(wp) :: mytime       !< Current simulation time
     real(wp) :: finaltime    !< Final simulation time
 
-    logical :: rdma_mpi
-
-    real(wp)                                    :: mytime     !< Current simulation time
-    real(wp)                                    :: finaltime  !< Final simulation time
     logical                                     :: rdma_mpi
     type(pres_field), allocatable, dimension(:) :: pb_ts
     type(pres_field), allocatable, dimension(:) :: mv_ts

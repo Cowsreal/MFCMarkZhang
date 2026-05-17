@@ -10,6 +10,9 @@ module m_heat_conduction
 
     implicit none
     private; public :: s_compute_heat_conduction_flux
+    type(int_bounds_info) :: isc1, isc2, isc3
+    $:GPU_DECLARE(create='[isc1, isc2, isc3]')
+
 contains
 
     subroutine s_compute_heat_conduction_flux(q_prim_vf, flux_src_vf, norm_dir, isx, isy, isz)
@@ -20,8 +23,10 @@ contains
         integer, intent(in) :: norm_dir
 
         integer :: j, k, l
-        real(wp), dimension(0:5) :: T
         real(wp) :: dT_dx, dxp, dyp
+
+        isc1 = isx; isc2 = isy; isc3 = isz
+        $:GPU_UPDATE(device='[isc1, isc2, isc3]')
 
         #:for NORM_DIR, JR, KR, LR, DX in &
             [(1, 'j+1', 'k',   'l',   'x_cc(j+1) - x_cc(j)'), &
@@ -30,20 +35,17 @@ contains
             #:if not MFC_CASE_OPTIMIZATION or num_dims >= NORM_DIR
                 if (norm_dir == ${NORM_DIR}$) then
                     $:GPU_PARALLEL_LOOP(collapse=3, private='[dT_dx,j,k,l]')
-                    do l = isz%beg, isz%end
-                        do k = isy%beg, isy%end
-                            do j = isx%beg, isx%end
-                            if(ib_markers%sf(j, k, l) == 0 .and. ib_markers%sf(${JR}$,${KR}$,${LR}$) == 0) then
-
-                                    dT_dx = gammas(1) * &
-                                        (q_prim_vf(eqn_idx%E)%sf(${JR}$, ${KR}$, ${LR}$) &
-                                            / (q_prim_vf(eqn_idx%cont%beg)%sf(${JR}$, ${KR}$, ${LR}$) * cvs(1)) - &
-                                        q_prim_vf(eqn_idx%E)%sf(j, k, l) &
-                                            / (q_prim_vf(eqn_idx%cont%beg)%sf(j, k, l) * cvs(1))) &
-                                        / (${DX}$)
-                                    flux_src_vf(eqn_idx%E)%sf(j, k, l) = &
-                                        flux_src_vf(eqn_idx%E)%sf(j, k, l) - kaps(1) * dT_dx
-                            end if
+                    do l = isc3%beg, isc3%end
+                        do k = isc2%beg, isc2%end
+                            do j = isc1%beg, isc1%end
+                                dT_dx = gammas(1) * &
+                                    (q_prim_vf(eqn_idx%E)%sf(${JR}$, ${KR}$, ${LR}$) &
+                                        / (q_prim_vf(eqn_idx%cont%beg)%sf(${JR}$, ${KR}$, ${LR}$) * cvs(1)) - &
+                                    q_prim_vf(eqn_idx%E)%sf(j, k, l) &
+                                        / (q_prim_vf(eqn_idx%cont%beg)%sf(j, k, l) * cvs(1))) &
+                                    / (${DX}$)
+                                flux_src_vf(eqn_idx%E)%sf(j, k, l) = &
+                                    flux_src_vf(eqn_idx%E)%sf(j, k, l) - kaps(1) * dT_dx
                             end do
                         end do
                     end do

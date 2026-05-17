@@ -14,6 +14,7 @@ module m_boundary_common
     use m_constants
     use m_delay_file_access
     use m_compile_specific
+    use m_variables_conversion
 
     implicit none
 
@@ -991,6 +992,7 @@ contains
         integer, intent(in)                                    :: k, l
         integer                                                :: j, i
         type(scalar_field), optional, intent(inout)            :: q_T_sf
+        real(wp) :: ke, T_in, T_g
 
         if (bc_dir == 1) then  !< x-direction
             if (bc_loc == -1) then  !< bc_x%beg
@@ -1071,6 +1073,22 @@ contains
                             q_T_sf%sf(k, -j, l) = q_T_sf%sf(k, 0, l)
                         end do
                     end if
+                end if
+
+                if (bc_y%isothermal_in .and. .not. chemistry) then
+                    do j = 1, buff_size
+                        if(igr) then
+                        ke    = 0.5_wp * (q_prim_vf(eqn_idx%mom%beg)%sf(k, j-1, l)**2 + q_prim_vf(eqn_idx%mom%beg+1)%sf(k, j-1, l)**2) / q_prim_vf(eqn_idx%cont%beg)%sf(k, j-1, l)
+                        T_in = (q_prim_vf(eqn_idx%E)%sf(k, j-1, l) - ke) / (q_prim_vf(eqn_idx%cont%beg)%sf(k, j-1, l) * cvs(1))
+                        T_g = 2._wp * bc_y%Twall_in - T_in
+                        ke = 0.5_wp * (q_prim_vf(eqn_idx%mom%beg)%sf(k, -j, l)**2 + q_prim_vf(eqn_idx%mom%beg+1)%sf(k, -j, l)**2) / q_prim_vf(eqn_idx%cont%beg)%sf(k, -j, l)
+
+                        q_prim_vf(eqn_idx%E)%sf(k, -j, l) = ke + q_prim_vf(eqn_idx%cont%beg)%sf(k, -j, l)* cvs(1) * T_g
+                        else
+                            q_prim_vf(eqn_idx%E)%sf(k,-j,l) = cvs(1)* q_prim_vf(eqn_idx%cont%beg)%sf(k, -j, l)* (2._wp *bc_y%Twall_in - gammas(1) * q_prim_vf(eqn_idx%E)%sf(k,j-1,l) &
+                            /(q_prim_vf(eqn_idx%E)%sf(k,j-1,l)*cvs(1)))  / gammas(1)
+                        end if
+                    end do
                 end if
             else  !< bc_y%end
                 do i = 1, sys_size
