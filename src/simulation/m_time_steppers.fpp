@@ -558,14 +558,26 @@ contains
                 ! update the ghost fluid properties point values based on IB state
                 if (qbmm .and. .not. polytropic) then
                     call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
+                else if (igr) then
+                    ! IGR
+                    call s_ibm_correct_state_igr(q_cons_ts(1)%vf)
                 else
+                    ! WENO/MUSCL
                     call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
                 end if
+                if(s == 3) then
+                    if(igr) then
+                        call s_compute_ib_forces(q_cons_ts(1)%vf, fluid_pp)
+                    else
+                        call s_compute_ib_forces(q_prim_vf, fluid_pp)
+                    end if
+                end if
+
             end if
         end do
 
-        !
-        if (ib) then
+        ! IGR for now does not support the following
+        if (ib .and. (.not. igr)) then
             if (moving_immersed_boundary_flag) call s_wrap_periodic_ibs()
             if (ib_state_wrt .and. (.not. moving_immersed_boundary_flag)) then
                 call s_compute_ib_forces(q_prim_vf, fluid_pp)

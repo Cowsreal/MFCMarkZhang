@@ -31,6 +31,7 @@ module m_variables_conversion
               s_convert_primitive_to_flux_variables, &
               s_compute_pressure, &
               s_compute_species_fraction, &
+              s_compute_energy, &
 #ifndef MFC_PRE_PROCESS
     s_compute_speed_of_sound, &
               s_compute_fast_magnetosonic_speed, &
@@ -143,6 +144,21 @@ contains
         #:endif
 
     end subroutine s_compute_pressure
+
+    !> Compute the energy from the appropriate equation of state
+    !> For now, only supports parameters compatible with IGR (5 eqn model)
+    subroutine s_compute_energy(dyn_pres, pi_inf, gamma, rho, qv, pres, energy)
+
+        $:GPU_ROUTINE(function_name='s_compute_energy', parallelism='[seq]', cray_noinline=True)
+
+        real(wp), intent(in)  :: dyn_pres, pi_inf, gamma, rho, qv, pres
+        real(wp), intent(out) :: energy
+
+        if (model_eqns == 2) then
+            energy = gamma*pres + dyn_pres + pi_inf + qv
+        end if
+
+    end subroutine s_compute_energy
 
     !> Convert mixture variables to density, gamma, pi_inf, and qv for the gamma/pi_inf model. Given conservative or primitive
     !! variables, transfers the density, specific heat ratio function and the liquid stiffness function from q_vf to rho, gamma and

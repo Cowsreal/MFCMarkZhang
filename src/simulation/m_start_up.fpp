@@ -664,6 +664,13 @@ contains
             end do
         end if
 
+        ! Enforce IB BCS before first time step
+        if (t_step == 0 .and. igr .and. ib) then
+            call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
+            call s_ibm_correct_state_igr(q_cons_ts(1)%vf)
+            call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
+        end if
+
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
         if (any(time_stepper == (/1, 2, 3/))) then
             call s_tvd_rk(t_step, time_avg, time_stepper)

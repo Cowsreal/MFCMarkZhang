@@ -14,6 +14,7 @@ module m_igr
     use m_mpi_proxy
     use m_helper
     use m_boundary_common
+    use m_ibm
 
     implicit none
 
@@ -301,6 +302,14 @@ contains
             $:END_GPU_PARALLEL_LOOP()
 
             call s_populate_F_igr_buffers(bc_type, jac_sf)
+
+            ! If we are running with immersed boundaries, this is the appropriate point where
+            ! the boundaries conditions should be enforced
+            if (ib) then
+                call s_ibm_interpolate_sigma_igr(jac)
+                ! Newly interpolated values must be communicated between ranks
+                call s_populate_F_igr_buffers(bc_type, jac_sf)
+            end if
 
             if (igr_iter_solver == 1) then  ! Jacobi iteration
                 $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3)
