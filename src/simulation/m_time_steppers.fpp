@@ -565,14 +565,13 @@ contains
                     ! WENO/MUSCL
                     call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
                 end if
-                if(s == 3) then
-                    if(igr) then
+                if (s == 3) then
+                    if (igr) then
                         call s_compute_ib_forces(q_cons_ts(1)%vf, fluid_pp)
                     else
                         call s_compute_ib_forces(q_prim_vf, fluid_pp)
                     end if
                 end if
-
             end if
         end do
 
