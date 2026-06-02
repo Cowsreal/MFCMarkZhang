@@ -154,33 +154,36 @@ contains
                 k = gp%loc(2)
                 l = gp%loc(3)
 
+                ! Compute interpolated density, velocity, pressure, volume fraction from conservative variables at image points
                 call s_interpolate_image_point_igr(q_cons_vf, gp, vel_IP, alpha_rho_IP, alpha_IP, pres_IP)
 
+                ! Compute velocity BCs
                 if (.not. gp%slip) then
+                    ! No slip boundary condition
                     $:GPU_LOOP(parallelism='[seq]')
                     do q = 1, num_dims
                         vel_g(q) = 0._wp
                     end do
                 else
-                    normal_vector_magnitude = 0._wp
+                    ! Slip boundary condition Find the magnitude of the normal vector at the current point
                     $:GPU_LOOP(parallelism='[seq]')
                     do q = 1, num_dims
                         normal_vector(q) = gp%levelset_norm(q)
-                        normal_vector_magnitude = normal_vector_magnitude + normal_vector(q)**2
                     end do
-                    normal_vector_magnitude = sqrt(normal_vector_magnitude)
+                    ! Find the component of velocity along the normal direction
                     vel_normal_IP_dot = 0._wp
                     $:GPU_LOOP(parallelism='[seq]')
                     do q = 1, num_dims
-                        normal_vector(q) = normal_vector(q)/normal_vector_magnitude
                         vel_normal_IP_dot = vel_normal_IP_dot + vel_IP(q)*normal_vector(q)
                     end do
+                    ! Subtract away the normal component of velocity
                     $:GPU_LOOP(parallelism='[seq]')
                     do q = 1, num_dims
                         vel_g(q) = vel_IP(q) - vel_normal_IP_dot*normal_vector(q)
                     end do
                 end if
 
+                ! Apply density and volume fraction BCs
                 q_cons_vf(eqn_idx%cont%beg)%sf(j, k, l) = alpha_rho_IP(1)
                 if (num_fluids > 1) then
                     q_cons_vf(eqn_idx%adv%beg)%sf(j, k, l) = alpha_IP(1)
@@ -194,6 +197,7 @@ contains
 
                 call s_convert_species_to_mixture_variables_acc(rho, gamma, pi_inf, qv, alpha_IP, alpha_rho_IP, Re_K)
 
+                ! Apply momentum BCs
                 dyn_pres = 0._wp
                 $:GPU_LOOP(parallelism='[seq]')
                 do q = 1, num_dims
@@ -202,8 +206,10 @@ contains
                 end do
                 dyn_pres = 0.5_wp*rho*dyn_pres
 
+                ! Convert pressure to energy
                 call s_compute_energy(dyn_pres, pi_inf, gamma, rho, qv, pres_IP, E_g)
 
+                ! Apply energy BCs
                 q_cons_vf(eqn_idx%E)%sf(j, k, l) = E_g
             end do
             $:END_GPU_PARALLEL_LOOP()
@@ -946,6 +952,7 @@ contains
         real(stp)                        :: dummyAlf
         real(wp), dimension(num_species) :: dummyRhoYks
 
+        ! Setup
         j1 = gp%ip_grid(1); j2 = j1 + 1
         k1 = gp%ip_grid(2); k2 = k1 + 1
         l1 = gp%ip_grid(3); l2 = l1 + 1
@@ -968,6 +975,7 @@ contains
 
         pres_IP = 0._wp
 
+        ! For each cell on the grid of image point interpolants
         $:GPU_LOOP(parallelism='[seq]')
         do l = l1, l2
             $:GPU_LOOP(parallelism='[seq]')
@@ -1053,6 +1061,7 @@ contains
                     l2 = 0
                 end if
 
+                ! For each cell on the grid of image point interpolants
                 jac(r, s, t) = 0._wp
                 $:GPU_LOOP(parallelism='[seq]')
                 do l = l1, l2
