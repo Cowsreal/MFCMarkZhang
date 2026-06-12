@@ -162,7 +162,8 @@ contains
                     ! No slip boundary condition
                     $:GPU_LOOP(parallelism='[seq]')
                     do q = 1, num_dims
-                        vel_g(q) = 0._wp
+                        vel_g(q) = -vel_IP(q)
+                        ! vel_g(q) = 0.0_wp
                     end do
                 else
                     ! Slip boundary condition Find the magnitude of the normal vector at the current point
@@ -179,7 +180,7 @@ contains
                     ! Subtract away the normal component of velocity
                     $:GPU_LOOP(parallelism='[seq]')
                     do q = 1, num_dims
-                        vel_g(q) = vel_IP(q) - vel_normal_IP_dot*normal_vector(q)
+                        vel_g(q) = vel_IP(q) - 2._wp*vel_normal_IP_dot*normal_vector(q)
                     end do
                 end if
 
@@ -358,7 +359,7 @@ contains
                     buf = sqrt(sum(norm**2))
                     norm = norm/buf
                     vel_norm_IP = sum(vel_IP*norm)*norm
-                    vel_g = vel_IP - vel_norm_IP
+                    vel_g = vel_IP - 2._wp*vel_norm_IP
                     if (patch_ib(patch_id)%moving_ibm /= 0) then
                         ! compute the linear velocity of the ghost point due to rotation
                         radial_vector = physical_loc - [patch_ib(patch_id)%x_centroid, patch_ib(patch_id)%y_centroid, &
@@ -372,6 +373,7 @@ contains
                     if (patch_ib(patch_id)%moving_ibm == 0) then
                         ! we know the object is not moving if moving_ibm is 0 (false)
                         vel_g = 0._wp
+                        ! vel_g(q) = -vel_IP(q)
                     else
                         ! get the vector that points from the centroid to the ghost
                         radial_vector = physical_loc - [patch_ib(patch_id)%x_centroid, patch_ib(patch_id)%y_centroid, &
@@ -1026,11 +1028,63 @@ contains
                                             & dummyRhoYks, pres, dummyT)
 
                     pres_IP = pres_IP + coeff*pres
+                    ! pres_IP = pres_IP + coeff*q_cons_vf(eqn_idx%E)%sf(j, k, l)
                 end do
             end do
         end do
 
     end subroutine s_interpolate_image_point_igr
+
+    !> Computes the mixture pressure from conservative variables at a single cell, for IGR.
+    !> Inverts the stiffened-gas energy relation E = gamma*p + dyn_pres + pi_inf + qv using
+    !> the mixture gamma, pi_inf, qv and density (consistent with s_compute_energy).
+    subroutine s_compute_pressure_igr(q_cons_vf, j, k, l, pres)
+
+        $:GPU_ROUTINE(function_name='s_compute_pressure_igr', parallelism='[seq]', cray_noinline=True)
+
+        type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf  !< Conservative Variables
+        integer, intent(in)                                 :: j, k, l    !< Cell indices
+        real(wp), intent(out)                               :: pres       !< Mixture pressure
+
+        #:if not MFC_CASE_OPTIMIZATION and USING_AMD
+            real(wp), dimension(3) :: alpha_rho_K, alpha_K
+        #:else
+            real(wp), dimension(num_fluids) :: alpha_rho_K, alpha_K
+        #:endif
+        real(wp)               :: rho, gamma, pi_inf, qv, dyn_pres, alpha_sum
+        real(wp), dimension(2) :: Re
+        integer                :: q
+
+        ! Gather partial densities and volume fractions (last alpha is the reduced 1 - sum)
+        if (num_fluids == 1) then
+            alpha_rho_K(1) = q_cons_vf(eqn_idx%cont%beg)%sf(j, k, l)
+            alpha_K(1) = 1._wp
+        else
+            alpha_sum = 0._wp
+            $:GPU_LOOP(parallelism='[seq]')
+            do q = 1, num_fluids - 1
+                alpha_rho_K(q) = q_cons_vf(eqn_idx%cont%beg - 1 + q)%sf(j, k, l)
+                alpha_K(q) = q_cons_vf(eqn_idx%adv%beg - 1 + q)%sf(j, k, l)
+                alpha_sum = alpha_sum + alpha_K(q)
+            end do
+            alpha_rho_K(num_fluids) = q_cons_vf(eqn_idx%cont%end)%sf(j, k, l)
+            alpha_K(num_fluids) = 1._wp - alpha_sum
+        end if
+
+        ! Mixture gamma, pi_inf, qv and total density
+        call s_convert_species_to_mixture_variables_acc(rho, gamma, pi_inf, qv, alpha_K, alpha_rho_K, Re)
+
+        ! Dynamic pressure from the conserved momentum
+        dyn_pres = 0._wp
+        $:GPU_LOOP(parallelism='[seq]')
+        do q = 1, num_dims
+            dyn_pres = dyn_pres + q_cons_vf(eqn_idx%mom%beg - 1 + q)%sf(j, k, l)**2
+        end do
+        dyn_pres = 0.5_wp*dyn_pres/rho
+
+        pres = (q_cons_vf(eqn_idx%E)%sf(j, k, l) - dyn_pres - pi_inf - qv)/gamma
+
+    end subroutine s_compute_pressure_igr
 
     !> Interpolates the entropic pressure array jac_sf in the IGR module along the ghost points
     subroutine s_ibm_interpolate_sigma_igr(jac)
@@ -1140,6 +1194,7 @@ contains
         real(wp), dimension(1:3) :: local_force_contribution, radial_vector, local_torque_contribution, vel
         real(wp), dimension(1:3) :: local_force_contribution_viscous
         real(wp)                 :: cell_volume, dx, dy, dz, dynamic_viscosity
+        real(wp)                 :: alpha_sum, alpha_local
 
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
             real(wp), dimension(3) :: dynamic_viscosities
@@ -1167,8 +1222,8 @@ contains
         $:GPU_PARALLEL_LOOP(private='[l, pres, dynPres, ib_idx, fluid_idx, radial_vector, local_force_contribution, &
                             & local_force_contribution_viscous, cell_volume, local_torque_contribution, dynamic_viscosity, &
                             & viscous_stress_div, viscous_stress_div_1, viscous_stress_div_2, viscous_cross_1, viscous_cross_2, &
-                            & dx, dy, dz]', copy='[forces, torques, forces_viscous]', copyin='[ib_markers, patch_ib, &
-                            & dynamic_viscosities, fluid_pp(1)]', collapse=3)
+                            & dx, dy, dz, alpha_sum, alpha_local]', copy='[forces, torques, forces_viscous]', &
+                            & copyin='[ib_markers, patch_ib, dynamic_viscosities, fluid_pp(1)]', collapse=3)
         do i = 0, m
             do j = 0, n
                 do k = 0, p
@@ -1191,69 +1246,72 @@ contains
                         local_force_contribution_viscous(:) = 0._wp
 
                         if (igr) then
-                            ! Q_PRIM_VF IS CONSERVATIVE WHEN IGR
+                            ! Q_PRIM_VF IS CONSERVATIVE WHEN IGR. The mixture pressure is the total
+                            ! pressure, so its gradient is applied once (not once per fluid).
                             pres(:,:) = 0._wp
 
-                            ! pres(1, 1) = s_compute_pressure_igr(q_prim_vf, i - 1, j, k, pres(1, 1))
-                            pres(1, 1) = (q_prim_vf(eqn_idx%E)%sf(i - 1, j, k) - 0.5_wp/q_prim_vf(eqn_idx%cont%beg)%sf(i - 1, j, &
-                                 & k)*(q_prim_vf(eqn_idx%mom%beg)%sf(i - 1, j, k)*q_prim_vf(eqn_idx%mom%beg)%sf(i - 1, j, &
-                                 & k) + q_prim_vf(eqn_idx%mom%beg + 1)%sf(i - 1, j, k)*q_prim_vf(eqn_idx%mom%beg + 1)%sf(i - 1, &
-                                 & j, k)))/gammas(1)
+                            call s_compute_pressure_igr(q_prim_vf, i - 1, j, k, pres(1, 1))
+                            call s_compute_pressure_igr(q_prim_vf, i + 1, j, k, pres(1, 2))
+                            call s_compute_pressure_igr(q_prim_vf, i, j - 1, k, pres(2, 1))
+                            call s_compute_pressure_igr(q_prim_vf, i, j + 1, k, pres(2, 2))
 
-                            pres(1, 2) = (q_prim_vf(eqn_idx%E)%sf(i + 1, j, k) - 0.5_wp/q_prim_vf(eqn_idx%cont%beg)%sf(i + 1, j, &
-                                 & k)*(q_prim_vf(eqn_idx%mom%beg)%sf(i + 1, j, k)*q_prim_vf(eqn_idx%mom%beg)%sf(i + 1, j, &
-                                 & k) + q_prim_vf(eqn_idx%mom%beg + 1)%sf(i + 1, j, k)*q_prim_vf(eqn_idx%mom%beg + 1)%sf(i + 1, &
-                                 & j, k)))/gammas(1)
-
-                            pres(2, 1) = (q_prim_vf(eqn_idx%E)%sf(i, j - 1, k) - 0.5_wp/q_prim_vf(eqn_idx%cont%beg)%sf(i, j - 1, &
-                                 & k)*(q_prim_vf(eqn_idx%mom%beg)%sf(i, j - 1, k)*q_prim_vf(eqn_idx%mom%beg)%sf(i, j - 1, &
-                                 & k) + q_prim_vf(eqn_idx%mom%beg + 1)%sf(i, j - 1, k)*q_prim_vf(eqn_idx%mom%beg + 1)%sf(i, &
-                                 & j - 1, k)))/gammas(1)
-                            pres(2, 2) = (q_prim_vf(eqn_idx%E)%sf(i, j + 1, k) - 0.5_wp/q_prim_vf(eqn_idx%cont%beg)%sf(i, j + 1, &
-                                 & k)*(q_prim_vf(eqn_idx%mom%beg)%sf(i, j + 1, k)*q_prim_vf(eqn_idx%mom%beg)%sf(i, j + 1, &
-                                 & k) + q_prim_vf(eqn_idx%mom%beg + 1)%sf(i, j + 1, k)*q_prim_vf(eqn_idx%mom%beg + 1)%sf(i, &
-                                 & j + 1, k)))/gammas(1)
-                        end if
-
-                        do fluid_idx = 0, num_fluids - 1
-                            ! Get the pressure contribution to force via a finite difference to compute the 2D components of the
-                            ! gradient of the pressure and cell volume
-                            if (igr) then
-                                ! force is the negative pressure gradient
-                                local_force_contribution(1) = local_force_contribution(1) - (pres(1, 2) - pres(1, 1))/(2._wp*dx)
-                                local_force_contribution(2) = local_force_contribution(2) - (pres(2, 2) - pres(2, 1))/(2._wp*dy)
-                            else
+                            ! force is the negative pressure gradient
+                            local_force_contribution(1) = local_force_contribution(1) - (pres(1, 2) - pres(1, 1))/(2._wp*dx)
+                            local_force_contribution(2) = local_force_contribution(2) - (pres(2, 2) - pres(2, 1))/(2._wp*dy)
+                            cell_volume = abs(dx*dy)
+                            if (num_dims == 3) then
+                                dz = z_cc(k + 1) - z_cc(k)
+                                call s_compute_pressure_igr(q_prim_vf, i, j, k - 1, pres(3, 1))
+                                call s_compute_pressure_igr(q_prim_vf, i, j, k + 1, pres(3, 2))
+                                local_force_contribution(3) = local_force_contribution(3) - (pres(3, 2) - pres(3, 1))/(2._wp*dz)
+                                cell_volume = abs(cell_volume*dz)
+                            end if
+                        else
+                            do fluid_idx = 0, num_fluids - 1
+                                ! Get the pressure contribution to force via a finite difference to compute the 2D components of the
+                                ! gradient of the pressure and cell volume
                                 local_force_contribution(1) = local_force_contribution(1) - (q_prim_vf(eqn_idx%E &
                                                          & + fluid_idx)%sf(i + 1, j, &
                                                          & k) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i - 1, j, k))/(2._wp*dx)  ! force is the negative pressure gradient
                                 local_force_contribution(2) = local_force_contribution(2) - (q_prim_vf(eqn_idx%E &
                                                          & + fluid_idx)%sf(i, j + 1, k) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, &
                                                          & j - 1, k))/(2._wp*dy)
-                            end if
-                            cell_volume = abs(dx*dy)
-                            ! add the 3D component of the pressure gradient, if we are working in 3 dimensions
-                            if (num_dims == 3) then
-                                dz = z_cc(k + 1) - z_cc(k)
-                                local_force_contribution(3) = local_force_contribution(3) - (q_prim_vf(eqn_idx%E &
-                                                         & + fluid_idx)%sf(i, j, k + 1) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, &
-                                                         & j, k - 1))/(2._wp*dz)
-                                cell_volume = abs(cell_volume*dz)
-                            end if
-                        end do
+                                cell_volume = abs(dx*dy)
+                                ! add the 3D component of the pressure gradient, if we are working in 3 dimensions
+                                if (num_dims == 3) then
+                                    dz = z_cc(k + 1) - z_cc(k)
+                                    local_force_contribution(3) = local_force_contribution(3) - (q_prim_vf(eqn_idx%E &
+                                                             & + fluid_idx)%sf(i, j, &
+                                                             & k + 1) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, j, k - 1))/(2._wp*dz)
+                                    cell_volume = abs(cell_volume*dz)
+                                end if
+                            end do
+                        end if
 
                         ! get the viscous stress and add its contribution if that is considered
                         if (viscous) then
                             ! compute the volume-weighted local dynamic viscosity
                             dynamic_viscosity = 0._wp
-                            do fluid_idx = 1, num_fluids
-                                ! local dynamic viscosity is the dynamic viscosity of the fluid times alpha of the fluid
-                                if (igr) then
-                                    dynamic_viscosity = dynamic_viscosity + 1.0_wp*dynamic_viscosities(fluid_idx)
+                            if (igr) then
+                                ! IGR stores N-1 volume fractions; the last alpha is the reduced 1 - sum
+                                if (num_fluids == 1) then
+                                    dynamic_viscosity = dynamic_viscosities(1)
                                 else
+                                    alpha_sum = 0._wp
+                                    do fluid_idx = 1, num_fluids - 1
+                                        alpha_local = q_prim_vf(eqn_idx%adv%beg - 1 + fluid_idx)%sf(i, j, k)
+                                        alpha_sum = alpha_sum + alpha_local
+                                        dynamic_viscosity = dynamic_viscosity + alpha_local*dynamic_viscosities(fluid_idx)
+                                    end do
+                                    dynamic_viscosity = dynamic_viscosity + (1._wp - alpha_sum)*dynamic_viscosities(num_fluids)
+                                end if
+                            else
+                                do fluid_idx = 1, num_fluids
+                                    ! local dynamic viscosity is the dynamic viscosity of the fluid times alpha of the fluid
                                     dynamic_viscosity = dynamic_viscosity + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i, j, &
                                         & k)*dynamic_viscosities(fluid_idx))
-                                end if
-                            end do
+                                end do
+                            end if
 
                             ! get the linear force components first
                             call s_compute_viscous_stress_tensor(viscous_stress_div_1, q_prim_vf, dynamic_viscosity, i - 1, j, k)
