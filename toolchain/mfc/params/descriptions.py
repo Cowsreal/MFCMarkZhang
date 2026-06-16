@@ -133,6 +133,9 @@ DESCRIPTIONS = {
     # Immersed boundaries
     "ib": "Enable immersed boundary method",
     "num_ibs": "Number of immersed boundary patches",
+    "num_stl_models": "Number of STL/OBJ model entries in the stl_models array",
+    "num_particle_clouds": "Number of particle bed specifications to generate immersed boundary patches from",
+    "ib_neighborhood_radius": "Neighborhood radius in ranks for IB awareness",
     # Acoustic sources
     "acoustic_source": "Enable acoustic source terms",
     "num_source": "Number of acoustic sources",
@@ -287,11 +290,6 @@ PATTERNS = [
     (r"patch_icpp\((\d+)\)%Bx", "X-component of magnetic field for patch {0}"),
     (r"patch_icpp\((\d+)\)%By", "Y-component of magnetic field for patch {0}"),
     (r"patch_icpp\((\d+)\)%Bz", "Z-component of magnetic field for patch {0}"),
-    (r"patch_icpp\((\d+)\)%model_filepath", "STL model file path for patch {0}"),
-    (r"patch_icpp\((\d+)\)%model_translate\((\d+)\)", "Model translation component {1} for patch {0}"),
-    (r"patch_icpp\((\d+)\)%model_scale\((\d+)\)", "Model scale component {1} for patch {0}"),
-    (r"patch_icpp\((\d+)\)%model_rotate\((\d+)\)", "Model rotation component {1} for patch {0}"),
-    (r"patch_icpp\((\d+)\)%model_threshold", "Model threshold for patch {0}"),
     (r"patch_icpp\((\d+)\)%epsilon", "Interface thickness for patch {0}"),
     (r"patch_icpp\((\d+)\)%beta", "Shape parameter beta for patch {0}"),
     (r"patch_icpp\((\d+)\)%a\((\d+)\)", "Shape coefficient a({1}) for patch {0}"),
@@ -300,7 +298,7 @@ PATTERNS = [
     (r"patch_icpp\((\d+)\)%qv", "Heat of formation for patch {0}"),
     (r"patch_icpp\((\d+)\)%qvp", "Heat of formation prime for patch {0}"),
     (r"patch_icpp\((\d+)\)%hcid", "Hard-coded patch ID for patch {0}"),
-    (r"patch_icpp\((\d+)\)%model_spc", "Model spacing for patch {0}"),
+    (r"patch_icpp\((\d+)\)%model_id", "Index into  stl_models array for STL/OBJ geometry patch {0}"),
     (r"patch_icpp\((\d+)\)%non_axis_sym", "Non-axisymmetric parameter for patch {0}"),
     (r"patch_icpp\((\d+)\)%r0", "Initial bubble radius for patch {0}"),
     (r"patch_icpp\((\d+)\)%v0", "Initial bubble velocity for patch {0}"),
@@ -325,15 +323,14 @@ PATTERNS = [
     (r"fluid_pp\((\d+)\)%qv", "Heat of formation for fluid {0}"),
     (r"fluid_pp\((\d+)\)%qvp", "Heat of formation prime for fluid {0}"),
     (r"fluid_pp\((\d+)\)%Re\((\d+)\)", "Reynolds number component {1} for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%mul0", "Reference liquid viscosity for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%ss", "Surface tension for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%pv", "Vapor pressure for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%gamma_v", "Specific heat ratio of vapor phase for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%M_v", "Molecular weight of vapor phase for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%mu_v", "Viscosity of vapor phase for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%k_v", "Thermal conductivity of vapor phase for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%cp_v", "Specific heat capacity (const. pressure) of vapor for fluid {0}"),
-    (r"fluid_pp\((\d+)\)%D_v", "Vapor mass diffusivity for fluid {0}"),
+    (r"fluid_pp\((\d+)\)%non_newtonian", "Enable Herschel-Bulkley non-Newtonian viscosity for fluid {0}"),
+    (r"fluid_pp\((\d+)\)%K", "HB consistency index for fluid {0}"),
+    (r"fluid_pp\((\d+)\)%nn", "HB flow behavior index for fluid {0}"),
+    (r"fluid_pp\((\d+)\)%tau0", "HB yield stress for fluid {0}"),
+    (r"fluid_pp\((\d+)\)%hb_m", "Papanastasiou regularization parameter for fluid {0}"),
+    (r"fluid_pp\((\d+)\)%mu_min", "Lower viscosity clamp for fluid {0}"),
+    (r"fluid_pp\((\d+)\)%mu_max", "Upper viscosity clamp for fluid {0}"),
+    (r"fluid_pp\((\d+)\)%mu_bulk", "Bulk viscosity (non-Newtonian) for fluid {0}"),
     # patch_ib patterns
     (r"patch_ib\((\d+)\)%geometry", "Geometry type for immersed boundary {0}"),
     (r"patch_ib\((\d+)\)%x_centroid", "X-coordinate of centroid for IB patch {0}"),
@@ -343,7 +340,6 @@ PATTERNS = [
     (r"patch_ib\((\d+)\)%length_y", "Y-dimension length for IB patch {0}"),
     (r"patch_ib\((\d+)\)%length_z", "Z-dimension length for IB patch {0}"),
     (r"patch_ib\((\d+)\)%radius", "Radius for IB patch {0}"),
-    (r"patch_ib\((\d+)\)%theta", "Theta angle for IB patch {0}"),
     (r"patch_ib\((\d+)\)%c", "Shape parameter c for IB patch {0}"),
     (r"patch_ib\((\d+)\)%p", "Shape parameter p for IB patch {0}"),
     (r"patch_ib\((\d+)\)%t", "Shape parameter t for IB patch {0}"),
@@ -354,12 +350,11 @@ PATTERNS = [
     (r"patch_ib\((\d+)\)%angles\((\d+)\)", "Orientation angle {1} for IB patch {0}"),
     (r"patch_ib\((\d+)\)%slip", "Enable slip condition for IB patch {0}"),
     (r"patch_ib\((\d+)\)%moving_ibm", "Enable moving boundary for IB patch {0}"),
-    (r"patch_ib\((\d+)\)%model_filepath", "STL model file path for IB patch {0}"),
-    (r"patch_ib\((\d+)\)%model_spc", "Model spacing for IB patch {0}"),
-    (r"patch_ib\((\d+)\)%model_threshold", "Model threshold for IB patch {0}"),
-    (r"patch_ib\((\d+)\)%model_translate\((\d+)\)", "Model translation component {1} for IB patch {0}"),
-    (r"patch_ib\((\d+)\)%model_scale\((\d+)\)", "Model scale component {1} for IB patch {0}"),
-    (r"patch_ib\((\d+)\)%model_rotate\((\d+)\)", "Model rotation component {1} for IB patch {0}"),
+    (r"patch_ib\((\d+)\)%model_id", "Index into stl_models array for STL/OBJ geometry IB patch {0}"),
+    (r"stl_models\((\d+)\)%model_filepath", "STL model file path for STL model {0}"),
+    (r"stl_models\((\d+)\)%model_threshold", "Inside/outside winding number threshold for STL model {0}"),
+    (r"stl_models\((\d+)\)%model_translate\((\d+)\)", "Translation component {1} for STL model {0}"),
+    (r"stl_models\((\d+)\)%model_scale\((\d+)\)", "Scale component {1} for STL model {0}"),
     # bc patterns
     (r"bc_([xyz])%vel_in\((\d+)\)", "Inlet velocity component {1} at {0}-boundary"),
     (r"bc_([xyz])%vel_out\((\d+)\)", "Outlet velocity component {1} at {0}-boundary"),
@@ -496,11 +491,6 @@ PATTERNS = [
     (r"lag_params%epsilonb", "Standard deviation scaling for Gaussian smoothing"),
     (r"lag_params%charwidth", "Domain virtual depth for 2D simulations"),
     (r"lag_params%valmaxvoid", "Maximum permitted void fraction"),
-    (r"lag_params%T0", "Initial bubble temperature"),
-    (r"lag_params%Thost", "Host fluid temperature"),
-    (r"lag_params%c0", "Initial sound speed"),
-    (r"lag_params%rho0", "Initial density"),
-    (r"lag_params%x0", "Initial bubble position"),
     (r"lag_params%(\w+)", "Lagrangian tracking parameter: {0}"),
     # chem_params patterns - specific fields first
     (r"chem_params%diffusion", "Enable species diffusion for chemistry"),
@@ -514,28 +504,18 @@ PATTERNS = [
 
 
 def get_description(param_name: str) -> str:
-    """Get description for a parameter from hand-curated or auto-generated sources.
+    """Get the best available description for a parameter.
 
-    Priority: hand-curated DESCRIPTIONS > PATTERNS > auto-generated param.description.
+    Priority: hand-curated DESCRIPTIONS > PATTERNS > naming-convention inference.
+    (param.description in REGISTRY is now populated from this function at registration
+    time, so it can be read directly without calling this function again.)
     """
-    # 1. Hand-curated descriptions (highest quality)
     if param_name in DESCRIPTIONS:
         return DESCRIPTIONS[param_name]
-
-    # 2. Pattern matching for indexed params (hand-curated templates)
     for pattern, template in PATTERNS:
         match = re.fullmatch(pattern, param_name)
         if match:
             return template.format(*match.groups())
-
-    # 3. Auto-generated description from registry (set by _auto_describe at registration)
-    from . import REGISTRY
-
-    param = REGISTRY.all_params.get(param_name)
-    if param and param.description:
-        return param.description
-
-    # 4. Last resort: naming convention inference
     return _infer_from_naming(param_name)
 
 

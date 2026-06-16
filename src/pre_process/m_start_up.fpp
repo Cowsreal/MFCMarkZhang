@@ -74,17 +74,7 @@ contains
         integer                 :: iostatus
         character(len=1000)     :: line
 
-        namelist /user_inputs/ case_dir, old_grid, old_ic, t_step_old, t_step_start, m, n, p, x_domain, y_domain, z_domain, &
-            & stretch_x, stretch_y, stretch_z, a_x, a_y, a_z, x_a, y_a, z_a, x_b, y_b, z_b, model_eqns, num_fluids, mpp_lim, &
-            & weno_order, bc_x, bc_y, bc_z, num_patches, hypoelasticity, mhd, patch_icpp, fluid_pp, bub_pp, precision, &
-            & parallel_io, mixlayer_vel_profile, mixlayer_vel_coef, mixlayer_perturb, mixlayer_perturb_nk, mixlayer_perturb_k0, &
-            & pi_fac, perturb_flow, perturb_flow_fluid, perturb_flow_mag, perturb_sph, perturb_sph_fluid, fluid_rho, cyl_coord, &
-            & loops_x, loops_y, loops_z, rhoref, pref, bubbles_euler, R0ref, nb, polytropic, thermal, Ca, Web, Re_inv, &
-            & polydisperse, poly_sigma, qbmm, sigR, sigV, dist_type, rhoRV, file_per_process, relax, relax_model, palpha_eps, &
-            & ptgalpha_eps, ib, num_ibs, patch_ib, sigma, adv_n, cfl_adap_dt, cfl_const_dt, n_start, n_start_old, &
-            & surface_tension, hyperelasticity, pre_stress, elliptic_smoothing, elliptic_smoothing_iters, viscous, &
-            & bubbles_lagrange, num_bc_patches, patch_bc, Bx0, relativity, cont_damage, igr, igr_order, down_sample, recon_type, &
-            & muscl_order, hyper_cleaning, simplex_perturb, simplex_params, fft_wrt
+        #:include 'generated_namelist.fpp'
 
         file_loc = 'pre_process.inp'
         inquire (FILE=trim(file_loc), EXIST=file_check)
@@ -541,7 +531,7 @@ contains
 
         call cpu_time(start)
 
-        if (old_ic) call s_read_ic_data_files(q_cons_vf)
+        if (old_ic) call s_read_ic_data_files(ic%q_cons_vf)
 
         call s_generate_initial_condition()
 
@@ -554,8 +544,8 @@ contains
                         r2 = x_cc(j)**2
                         if (n > 0) r2 = r2 + y_cc(k)**2
                         if (p > 0) r2 = r2 + z_cc(l)**2
-                        q_cons_vf(eqn_idx%psi)%sf(j, k, l) = 1.0e-2_wp*exp(-r2/(2.0_wp*0.05_wp**2))
-                        q_prim_vf(eqn_idx%psi)%sf(j, k, l) = q_cons_vf(eqn_idx%psi)%sf(j, k, l)
+                        ic%q_cons_vf(eqn_idx%psi)%sf(j, k, l) = 1.0e-2_wp*exp(-r2/(2.0_wp*0.05_wp**2))
+                        ic%q_prim_vf(eqn_idx%psi)%sf(j, k, l) = ic%q_cons_vf(eqn_idx%psi)%sf(j, k, l)
                     end do
                 end do
             end do
@@ -566,13 +556,13 @@ contains
                 print *, 'initial condition might have been altered due to enforcement of pTg-equilibrium (relax = "T" activated)'
             end if
 
-            call s_infinite_relaxation_k(q_cons_vf)
+            call s_infinite_relaxation_k(ic%q_cons_vf)
         end if
 
         if (chemistry) then
-            call s_write_data_files(q_cons_vf, q_prim_vf, bc_type, q_T_sf)
+            call s_write_data_files(ic%q_cons_vf, ic%q_prim_vf, ic%bc_type, ic%q_T_sf)
         else
-            call s_write_data_files(q_cons_vf, q_prim_vf, bc_type)
+            call s_write_data_files(ic%q_cons_vf, ic%q_prim_vf, ic%bc_type)
         end if
 
         call cpu_time(finish)
