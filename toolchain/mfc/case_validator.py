@@ -1060,7 +1060,7 @@ class CaseValidator:
         bubbles_euler = self.get("bubbles_euler", "F") == "T"
         bubbles_lagrange = self.get("bubbles_lagrange", "F") == "T"
         alt_soundspeed = self.get("alt_soundspeed", "F") == "T"
-        surface_tension = self.get("surface_tension", "F") == "T"
+        #surface_tension = self.get("surface_tension", "F") == "T"
         hypoelasticity = self.get("hypoelasticity", "F") == "T"
         acoustic_source = self.get("acoustic_source", "F") == "T"
         relax = self.get("relax", "F") == "T"
@@ -1078,7 +1078,7 @@ class CaseValidator:
         self.prohibit(bubbles_euler, "IGR does not support Euler-Euler bubble models")
         self.prohibit(bubbles_lagrange, "IGR does not support Euler-Lagrange bubble models")
         self.prohibit(alt_soundspeed, "IGR does not support alt_soundspeed = T")
-        self.prohibit(surface_tension, "IGR does not support surface tension")
+        #self.prohibit(surface_tension, "IGR does not support surface tension")
         self.prohibit(hypoelasticity, "IGR does not support hypoelasticity")
         self.prohibit(acoustic_source, "IGR does not support acoustic sources")
         self.prohibit(relax, "IGR does not support phase change")

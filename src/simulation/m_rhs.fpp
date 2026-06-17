@@ -567,7 +567,11 @@ contains
 
         if (surface_tension) then
             call nvtxStartRange("RHS-SURFACE-TENSION")
-            call s_get_capillary(q_prim_qp%vf, bc_type)
+            if (igr) then
+                call s_get_capillary(q_cons_vf, bc_type)
+            else
+                call s_get_capillary(q_prim_qp%vf, bc_type)
+            end if
             call nvtxEndRange
         end if
 
