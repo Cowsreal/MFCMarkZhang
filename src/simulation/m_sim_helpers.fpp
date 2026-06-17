@@ -196,7 +196,7 @@ contains
         real(wp), dimension(0:m,0:n,0:p), intent(inout) :: max_dt
         real(wp), dimension(2), intent(in)              :: Re_l
         integer, intent(in)                             :: j, k, l
-        real(wp)                                        :: icfl_dt, vcfl_dt
+        real(wp)                                        :: icfl_dt, vcfl_dt, scfl_dt
         real(wp)                                        :: fltr_dtheta
 
         ! Inviscid CFL calculation
@@ -227,10 +227,24 @@ contains
             end if
         end if
 
+        if (surface_tension) then
+            if (p > 0) then
+                scfl_dt = cfl_target*sqrt(rho*min(dx(j), dy(k), dz(l))**3._wp/(2._wp*pi*sigma))
+            else if (n > 0) then
+                scfl_dt = cfl_target*sqrt(rho*min(dx(j), dy(k))**3._wp/(2._wp*pi*sigma))
+            else
+                scfl_dt = cfl_target*sqrt(rho*dx(j)**3._wp/(2._wp*pi*sigma))
+            end if
+        end if
+
         if (any(Re_size > 0)) then
             max_dt(j, k, l) = min(icfl_dt, vcfl_dt)
         else
             max_dt(j, k, l) = icfl_dt
+        end if
+
+        if (surface_tension) then
+            max_dt(j, k, l) = min(max_dt(j, k, l), scfl_dt)
         end if
 
     end subroutine s_compute_dt_from_cfl

@@ -4,6 +4,7 @@
 
 #:include 'case.fpp'
 #:include 'macros.fpp'
+#:include 'inline_capillary.fpp'
 
 !> @brief Iterative ghost rasterization (IGR) for sharp immersed boundary treatment
 module m_igr
@@ -14,7 +15,8 @@ module m_igr
     use m_mpi_proxy
     use m_helper
     use m_boundary_common
-    use m_ibm
+    use m_ibm, only: s_ibm_interpolate_sigma_igr
+    use m_surface_tension, only: c_divs
 
     implicit none
 
@@ -421,16 +423,21 @@ contains
         real(wp)                                               :: rho_R, gamma_R, pi_inf_R, E_R, mu_R, F_R, pres_R
         real(wp), dimension(3)                                 :: vflux_L_arr, vflux_R_arr
         real(wp), dimension(-1:1)                              :: rho_sf_small
+        real(wp) :: w1, w2, w3, normW
         #:if not MFC_CASE_OPTIMIZATION
             real(wp), dimension(num_fluids_max) :: alpha_rho_L, alpha_L, alpha_R, alpha_rho_R
             real(wp), dimension(3)              :: vel_L, vel_R
             real(wp), dimension(3, 3)           :: dvel
             real(wp), dimension(3)              :: dvel_small
+            real(wp), dimension(4)              :: wL, wR
+            real(wp), dimension(3, 3)           :: Omega
         #:else
             real(wp), dimension(num_fluids)         :: alpha_rho_L, alpha_L, alpha_R, alpha_rho_R
             real(wp), dimension(num_dims)           :: vel_L, vel_R
             real(wp), dimension(num_dims, num_dims) :: dvel
             real(wp), dimension(num_dims)           :: dvel_small
+            real(wp), dimension(num_dims + 1)       :: wL, wR
+            real(wp), dimension(num_dims, num_dims) :: Omega
         #:endif
 
         if (idir == 1) then
@@ -438,7 +445,8 @@ contains
                 #:if not MFC_CASE_OPTIMIZATION or num_dims > 1
                     $:GPU_PARALLEL_LOOP(collapse=3, private='[j, k, l, rho_L, rho_R, gamma_L, gamma_R, pi_inf_L, pi_inf_R, mu_L, &
                                         & mu_R, vel_L, vel_R, pres_L, pres_R, alpha_L, alpha_R, alpha_rho_L, alpha_rho_R, F_L, &
-                                        & F_R, E_L, E_R, cfl, dvel, dvel_small, rho_sf_small, vflux_L_arr, vflux_R_arr]')
+                                        & F_R, E_L, E_R, cfl, dvel, dvel_small, rho_sf_small, vflux_L_arr, vflux_R_arr, w1, w2, &
+                                        & w3, normW, wL, wR, Omega]')
                     do l = 0, p
                         do k = 0, n
                             do j = -1, m
@@ -538,6 +546,14 @@ contains
                                     vel_R(i) = 0._wp
                                 end do
 
+                                if (surface_tension) then
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do i = 1, num_dims + 1
+                                        wL(i) = 0._wp
+                                        wR(i) = 0._wp
+                                    end do
+                                end if
+
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do q = vidxb + 1, vidxe
                                     $:GPU_LOOP(parallelism='[seq]')
@@ -557,8 +573,17 @@ contains
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do i = 1, num_dims
                                         vel_L(i) = vel_L(i) + coeff_L(q)*q_cons_vf(igr_momxb + i - 1)%sf(j + q, k, l)
+
                                     end do
+
+                                    if (surface_tension) then
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_dims + 1
+                                            wL(i) = wL(i) + coeff_L(q) * c_divs(i)%sf(j + q, k, l)
+                                        end do
+                                    end if
                                 end do
+
 
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do q = vidxb, vidxe - 1
@@ -580,6 +605,12 @@ contains
                                     do i = 1, num_dims
                                         vel_R(i) = vel_R(i) + coeff_R(q)*q_cons_vf(igr_momxb + i - 1)%sf(j + q, k, l)
                                     end do
+                                    if (surface_tension) then
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_dims + 1
+                                            wR(i) = wR(i) + coeff_R(q) * c_divs(i)%sf(j + q, k, l)
+                                        end do
+                                    end if
                                 end do
 
                                 if (num_fluids > 1) then
@@ -677,6 +708,43 @@ contains
                                     $:GPU_ATOMIC(atomic='update')
                                     rhs_vf(igr_E_idx)%sf(j, k, l) = rhs_vf(igr_E_idx)%sf(j, k, &
                                            & l) + real(0.5_wp*dt*mu_R*vflux_R_arr(3)*vel_R(1)*(1._wp/dx(j)), kind=stp)
+                                end if
+
+                                if (surface_tension) then
+                                    w1 = 0.5_wp*(wL(1) + wR(1))
+                                    w2 = 0.5_wp*(wL(2) + wR(2))
+                                    w3 = 0._wp
+                                    if (p > 0) w3 = 0.5_wp*(wL(3) + wR(3))
+                                    normW = 0.5_wp*(wL(num_dims + 1) + wR(num_dims + 1))
+
+                                    if (normW > capillary_cutoff) then
+                                        @:compute_capillary_stress_tensor()
+
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_dims
+                                            $:GPU_ATOMIC(atomic='update')
+                                            rhs_vf(igr_momxb + i - 1)%sf(j + 1, k, l) = rhs_vf(igr_momxb + i - 1)%sf(j + 1, k, l) &
+                                                & + real(dt*Omega(1, i)*(1._wp/dx(j + 1)), kind=stp)
+                                            $:GPU_ATOMIC(atomic='update')
+                                            rhs_vf(igr_momxb + i - 1)%sf(j, k, l) = rhs_vf(igr_momxb + i - 1)%sf(j, k, l) &
+                                                & - real(dt*Omega(1, i)*(1._wp/dx(j)), kind=stp)
+
+                                            $:GPU_ATOMIC(atomic='update')
+                                            rhs_vf(igr_E_idx)%sf(j + 1, k, l) = rhs_vf(igr_E_idx)%sf(j + 1, k, l) &
+                                                & + real(dt*Omega(1, i)*0.5_wp*(vel_L(i) + vel_R(i))*(1._wp/dx(j + 1)), kind=stp)
+                                            $:GPU_ATOMIC(atomic='update')
+                                            rhs_vf(igr_E_idx)%sf(j, k, l) = rhs_vf(igr_E_idx)%sf(j, k, l) &
+                                                & - real(dt*Omega(1, i)*0.5_wp*(vel_L(i) + vel_R(i))*(1._wp/dx(j)), kind=stp)
+                                        end do
+
+                                        ! CSF energy correction, Schmidmayer et al. JCP (2017)
+                                        $:GPU_ATOMIC(atomic='update')
+                                        rhs_vf(igr_E_idx)%sf(j + 1, k, l) = rhs_vf(igr_E_idx)%sf(j + 1, k, l) &
+                                            & + real(dt*sigma*normW*0.5_wp*(vel_L(1) + vel_R(1))*(1._wp/dx(j + 1)), kind=stp)
+                                        $:GPU_ATOMIC(atomic='update')
+                                        rhs_vf(igr_E_idx)%sf(j, k, l) = rhs_vf(igr_E_idx)%sf(j, k, l) &
+                                            & - real(dt*sigma*normW*0.5_wp*(vel_L(1) + vel_R(1))*(1._wp/dx(j)), kind=stp)
+                                    end if
                                 end if
 
                                 E_L = 0._wp; E_R = 0._wp
@@ -1327,7 +1395,8 @@ contains
                 #:if not MFC_CASE_OPTIMIZATION or num_dims > 1
                     $:GPU_PARALLEL_LOOP(collapse=3, private='[j, k, l, rho_L, rho_R, gamma_L, gamma_R, pi_inf_L, pi_inf_R, mu_L, &
                                         & mu_R, vel_L, vel_R, pres_L, pres_R, alpha_L, alpha_R, alpha_rho_L, alpha_rho_R, F_L, &
-                                        & F_R, E_L, E_R, cfl, dvel_small, rho_sf_small, vflux_L_arr, vflux_R_arr]')
+                                        & F_R, E_L, E_R, cfl, dvel_small, rho_sf_small, vflux_L_arr, vflux_R_arr, w1, w2, &
+                                        & w3, normW, wL, wR, Omega]')
                     do l = 0, p
                         do k = -1, n
                             do j = 0, m
@@ -1410,6 +1479,13 @@ contains
                                     vel_L(i) = 0._wp
                                     vel_R(i) = 0._wp
                                 end do
+                                if (surface_tension) then
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do i = 1, num_dims + 1
+                                        wL(i) = 0._wp
+                                        wR(i) = 0._wp
+                                    end do
+                                end if
 
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do q = vidxb + 1, vidxe
@@ -1431,6 +1507,12 @@ contains
                                     do i = 1, num_dims
                                         vel_L(i) = vel_L(i) + coeff_L(q)*q_cons_vf(igr_momxb + i - 1)%sf(j, k + q, l)
                                     end do
+                                    if (surface_tension) then
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_dims + 1
+                                            wL(i) = wL(i) + coeff_L(q) * c_divs(i)%sf(j, k + q, l)
+                                        end do
+                                    end if
                                 end do
 
                                 $:GPU_LOOP(parallelism='[seq]')
@@ -1453,6 +1535,13 @@ contains
                                     do i = 1, num_dims
                                         vel_R(i) = vel_R(i) + coeff_R(q)*q_cons_vf(igr_momxb + i - 1)%sf(j, k + q, l)
                                     end do
+
+                                    if (surface_tension) then
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_dims + 1
+                                            wR(i) = wR(i) + coeff_R(q) * c_divs(i)%sf(j, k + q, l)
+                                        end do
+                                    end if
                                 end do
 
                                 if (num_fluids > 1) then
@@ -1551,6 +1640,43 @@ contains
                                     $:GPU_ATOMIC(atomic='update')
                                     rhs_vf(igr_E_idx)%sf(j, k, l) = rhs_vf(igr_E_idx)%sf(j, k, &
                                            & l) + real(0.5_wp*dt*mu_R*vflux_R_arr(3)*vel_R(2)*(1._wp/dy(k)), kind=stp)
+                                end if
+
+                                if (surface_tension) then
+                                    w1 = 0.5_wp*(wL(1) + wR(1))
+                                    w2 = 0.5_wp*(wL(2) + wR(2))
+                                    w3 = 0._wp
+                                    if (p > 0) w3 = 0.5_wp*(wL(3) + wR(3))
+                                    normW = 0.5_wp*(wL(num_dims + 1) + wR(num_dims + 1))
+
+                                    if (normW > capillary_cutoff) then
+                                        @:compute_capillary_stress_tensor()
+
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_dims
+                                            $:GPU_ATOMIC(atomic='update')
+                                            rhs_vf(igr_momxb + i - 1)%sf(j, k + 1, l) = rhs_vf(igr_momxb + i - 1)%sf(j, k + 1, l) &
+                                                & + real(dt*Omega(2, i)*(1._wp/dy(k + 1)), kind=stp)
+                                            $:GPU_ATOMIC(atomic='update')
+                                            rhs_vf(igr_momxb + i - 1)%sf(j, k, l) = rhs_vf(igr_momxb + i - 1)%sf(j, k, l) &
+                                                & - real(dt*Omega(2, i)*(1._wp/dy(k)), kind=stp)
+
+                                            $:GPU_ATOMIC(atomic='update')
+                                            rhs_vf(igr_E_idx)%sf(j, k + 1, l) = rhs_vf(igr_E_idx)%sf(j, k + 1, l) &
+                                                & + real(dt*Omega(2, i)*0.5_wp*(vel_L(i) + vel_R(i))*(1._wp/dy(k + 1)), kind=stp)
+                                            $:GPU_ATOMIC(atomic='update')
+                                            rhs_vf(igr_E_idx)%sf(j, k, l) = rhs_vf(igr_E_idx)%sf(j, k, l) &
+                                                & - real(dt*Omega(2, i)*0.5_wp*(vel_L(i) + vel_R(i))*(1._wp/dy(k)), kind=stp)
+                                        end do
+
+                                        ! CSF energy correction, Schmidmayer et al. JCP (2017)
+                                        $:GPU_ATOMIC(atomic='update')
+                                        rhs_vf(igr_E_idx)%sf(j, k + 1, l) = rhs_vf(igr_E_idx)%sf(j, k + 1, l) &
+                                            & + real(dt*sigma*normW*0.5_wp*(vel_L(2) + vel_R(2))*(1._wp/dy(k + 1)), kind=stp)
+                                        $:GPU_ATOMIC(atomic='update')
+                                        rhs_vf(igr_E_idx)%sf(j, k, l) = rhs_vf(igr_E_idx)%sf(j, k, l) &
+                                            & - real(dt*sigma*normW*0.5_wp*(vel_L(2) + vel_R(2))*(1._wp/dy(k)), kind=stp)
+                                    end if
                                 end if
 
                                 E_L = 0._wp; E_R = 0._wp
