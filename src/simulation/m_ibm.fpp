@@ -1212,10 +1212,11 @@ contains
         real(wp), dimension(num_ibs, 3) :: forces_viscous
         real(wp), dimension(1:3,1:3) :: viscous_stress_div, viscous_stress_div_1, viscous_stress_div_2, viscous_cross_1, &
              & viscous_cross_2  ! viscous stress tensor with temp vectors to hold divergence calculations
-        real(wp), dimension(1:3) :: local_force_contribution, radial_vector, local_torque_contribution, vel
-        real(wp), dimension(1:3) :: local_force_contribution_viscous
-        real(wp)                 :: cell_volume, dx, dy, dz, dynamic_viscosity
-        real(wp)                 :: alpha_sum, alpha_local
+        real(wp), dimension(1:3)            :: local_force_contribution, radial_vector, local_torque_contribution, vel
+        real(wp), dimension(1:3)            :: local_force_contribution_viscous
+        real(wp)                            :: cell_volume, dx, dy, dz, dynamic_viscosity
+        real(wp)                            :: alpha_sum, alpha_local
+        real(wp), dimension(num_gbl_ibs, 3) :: forces_gbl, forces_viscous_gbl
 
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
             real(wp), dimension(3) :: dynamic_viscosities
@@ -1402,21 +1403,27 @@ contains
 
         call s_apply_collision_forces(ghost_points, num_gps, ib_markers, forces, torques)
 
-        ! reduce the forces across all MPI ranks
-        call s_mpi_allreduce_vectors_sum(forces, forces, num_ibs, 3)
-        call s_mpi_allreduce_vectors_sum(forces_viscous, forces_viscous, num_ibs, 3)
-        !        call s_mpi_allreduce_vectors_sum(torques, torques, num_ibs, 3)
+        forces_gbl = 0._wp
+        forces_viscous_gbl = 0._wp
+        do i = 1, num_ibs
+            forces_gbl(patch_ib(i)%gbl_patch_id,:) = forces(i,:)
+            forces_viscous_gbl(patch_ib(i)%gbl_patch_id,:) = forces_viscous(i,:)
+        end do
+
+        ! reduce the forces across all MPI ranks        call s_mpi_allreduce_vectors_sum(torques, torques, num_ibs, 3)
+        call s_mpi_allreduce_vectors_sum(forces_gbl, forces_gbl, num_gbl_ibs, 3)
+        call s_mpi_allreduce_vectors_sum(forces_viscous_gbl, forces_viscous_gbl, num_gbl_ibs, 3)
 
         ! consider body forces after reducing to avoid double counting
         do i = 1, num_ibs
             if (bf_x) then
-                forces(i, 1) = forces(i, 1) + accel_bf(1)*patch_ib(i)%mass
+                forces_gbl(patch_ib(i)%gbl_patch_id, 1) = forces_gbl(patch_ib(i)%gbl_patch_id, 1) + accel_bf(1)*patch_ib(i)%mass
             end if
             if (bf_y) then
-                forces(i, 2) = forces(i, 2) + accel_bf(2)*patch_ib(i)%mass
+                forces_gbl(patch_ib(i)%gbl_patch_id, 2) = forces_gbl(patch_ib(i)%gbl_patch_id, 2) + accel_bf(2)*patch_ib(i)%mass
             end if
             if (bf_z) then
-                forces(i, 3) = forces(i, 3) + accel_bf(3)*patch_ib(i)%mass
+                forces_gbl(patch_ib(i)%gbl_patch_id, 3) = forces_gbl(patch_ib(i)%gbl_patch_id, 3) + accel_bf(3)*patch_ib(i)%mass
             end if
         end do
 
@@ -1434,12 +1441,15 @@ contains
         if (proc_rank == 0) then
             file_loc = trim(case_dir) // '/forces.csv'
             open (unit=92, file=trim(file_loc), status='UNKNOWN', position='APPEND', action='WRITE')
-            write (92, '(ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8)') mytime, ",", forces(1, 1), ",", &
-                    & forces_viscous(1, 1), ",", forces(1, 2), ",", forces_viscous(1, 2)
+            write (92, '(ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8)') mytime, ",", forces_gbl(1, 1), ",", &
+                   & forces_viscous_gbl(1, 1), ",", forces_gbl(1, 2), ",", forces_viscous_gbl(1, 2), &
+                   ",", forces_gbl(1, 3), ",", forces_viscous_gbl(1, 3)
+
             close (92)
         end if
 
     end subroutine s_compute_ib_forces
+
 
         !> Compute pressure and viscous forces and torques on immersed bodies via volume integration
         ! subroutine s_compute_ib_forces(q_prim_vf, fluid_pp)
