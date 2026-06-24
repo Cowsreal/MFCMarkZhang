@@ -1202,6 +1202,252 @@ contains
 
     end subroutine s_update_mib
 
+    !> Compute pressure and viscous forces and torques on immersed bodies via volume integration
+    subroutine s_compute_ib_forces(q_prim_vf, fluid_pp)
+
+        type(scalar_field), dimension(1:sys_size), intent(in) :: q_prim_vf
+        type(physical_parameters), dimension(1:num_fluids), intent(in) :: fluid_pp
+        integer :: i, j, k, l, encoded_ib_idx, ib_idx, fluid_idx
+        real(wp), dimension(num_ibs, 3) :: forces, torques
+        real(wp), dimension(num_ibs, 3) :: forces_viscous
+        real(wp), dimension(1:3,1:3) :: viscous_stress_div, viscous_stress_div_1, viscous_stress_div_2, viscous_cross_1, &
+             & viscous_cross_2  ! viscous stress tensor with temp vectors to hold divergence calculations
+        real(wp), dimension(1:3)            :: local_force_contribution, radial_vector, local_torque_contribution, vel
+        real(wp), dimension(1:3)            :: local_force_contribution_viscous
+        real(wp)                            :: cell_volume, dx, dy, dz, dynamic_viscosity
+        real(wp)                            :: alpha_sum, alpha_local
+        real(wp), dimension(num_gbl_ibs, 3) :: forces_gbl, forces_viscous_gbl
+
+        #:if not MFC_CASE_OPTIMIZATION and USING_AMD
+            real(wp), dimension(3) :: dynamic_viscosities
+        #:else
+            real(wp), dimension(num_fluids) :: dynamic_viscosities
+        #:endif
+        real(wp), dimension(1:3,2) :: pres, dynPres
+        character(len=50)          :: file_loc
+        call nvtxStartRange("COMPUTE-IB-FORCES")
+
+        forces = 0._wp
+        forces_viscous = 0._wp
+        torques = 0._wp
+
+        if (viscous) then
+            do fluid_idx = 1, num_fluids
+                if (fluid_pp(fluid_idx)%Re(1) > 0._wp) then
+                    dynamic_viscosities(fluid_idx) = 1._wp/fluid_pp(fluid_idx)%Re(1)
+                else
+                    dynamic_viscosities(fluid_idx) = 0._wp
+                end if
+            end do
+        end if
+
+        $:GPU_PARALLEL_LOOP(private='[l, pres, dynPres, ib_idx, fluid_idx, radial_vector, local_force_contribution, &
+                            & local_force_contribution_viscous, cell_volume, local_torque_contribution, dynamic_viscosity, &
+                            & viscous_stress_div, viscous_stress_div_1, viscous_stress_div_2, viscous_cross_1, viscous_cross_2, &
+                            & dx, dy, dz, alpha_sum, alpha_local]', copy='[forces, torques, forces_viscous]', &
+                            & copyin='[ib_markers, patch_ib, dynamic_viscosities, fluid_pp(1)]', collapse=3)
+        do i = 0, m
+            do j = 0, n
+                do k = 0, p
+                    encoded_ib_idx = ib_markers%sf(i, j, k)
+                    if (encoded_ib_idx /= 0) then
+                        call s_decode_patch_periodicity(encoded_ib_idx, ib_idx)
+
+                        ! get the vector pointing to the grid cell from the IB centroid
+                        if (num_dims == 3) then
+                            radial_vector = [x_cc(i), y_cc(j), z_cc(k)] - [patch_ib(ib_idx)%x_centroid, &
+                                                  & patch_ib(ib_idx)%y_centroid, patch_ib(ib_idx)%z_centroid]
+                        else
+                            radial_vector = [x_cc(i), y_cc(j), 0._wp] - [patch_ib(ib_idx)%x_centroid, &
+                                                  & patch_ib(ib_idx)%y_centroid, 0._wp]
+                        end if
+                        dx = x_cc(i + 1) - x_cc(i)
+                        dy = y_cc(j + 1) - y_cc(j)
+
+                        local_force_contribution(:) = 0._wp
+                        local_force_contribution_viscous(:) = 0._wp
+
+                        if (igr) then
+                            ! Q_PRIM_VF IS CONSERVATIVE WHEN IGR. The mixture pressure is the total
+                            ! pressure, so its gradient is applied once (not once per fluid).
+                            pres(:,:) = 0._wp
+
+                            call s_compute_pressure_igr(q_prim_vf, i - 1, j, k, pres(1, 1))
+                            call s_compute_pressure_igr(q_prim_vf, i + 1, j, k, pres(1, 2))
+                            call s_compute_pressure_igr(q_prim_vf, i, j - 1, k, pres(2, 1))
+                            call s_compute_pressure_igr(q_prim_vf, i, j + 1, k, pres(2, 2))
+
+                            ! force is the negative pressure gradient
+                            local_force_contribution(1) = local_force_contribution(1) - (pres(1, 2) - pres(1, 1))/(2._wp*dx)
+                            local_force_contribution(2) = local_force_contribution(2) - (pres(2, 2) - pres(2, 1))/(2._wp*dy)
+                            cell_volume = abs(dx*dy)
+                            if (num_dims == 3) then
+                                dz = z_cc(k + 1) - z_cc(k)
+                                call s_compute_pressure_igr(q_prim_vf, i, j, k - 1, pres(3, 1))
+                                call s_compute_pressure_igr(q_prim_vf, i, j, k + 1, pres(3, 2))
+                                local_force_contribution(3) = local_force_contribution(3) - (pres(3, 2) - pres(3, 1))/(2._wp*dz)
+                                cell_volume = abs(cell_volume*dz)
+                            end if
+                        else
+
+                            do fluid_idx = 0, num_fluids - 1
+                                ! Get the pressure contribution to force via a finite difference to compute the 2D components of the
+                                ! gradient of the pressure and cell volume
+                                local_force_contribution(1) = local_force_contribution(1) - (q_prim_vf(eqn_idx%E &
+                                                         & + fluid_idx)%sf(i + 1, j, &
+                                                         & k) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i - 1, j, k))/(2._wp*dx)  ! force is the negative pressure gradient
+                                local_force_contribution(2) = local_force_contribution(2) - (q_prim_vf(eqn_idx%E &
+                                                         & + fluid_idx)%sf(i, j + 1, k) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, &
+                                                         & j - 1, k))/(2._wp*dy)
+                                cell_volume = abs(dx*dy)
+                                ! add the 3D component of the pressure gradient, if we are working in 3 dimensions
+                                if (num_dims == 3) then
+                                    dz = z_cc(k + 1) - z_cc(k)
+                                    local_force_contribution(3) = local_force_contribution(3) - (q_prim_vf(eqn_idx%E &
+                                                             & + fluid_idx)%sf(i, j, &
+                                                             & k + 1) - q_prim_vf(eqn_idx%E + fluid_idx)%sf(i, j, k - 1))/(2._wp*dz)
+                                    cell_volume = abs(cell_volume*dz)
+                                end if
+                            end do
+                        end if
+
+                        ! get the viscous stress and add its contribution if that is considered
+                        if (viscous) then
+                            ! compute the volume-weighted local dynamic viscosity
+                            dynamic_viscosity = 0._wp
+                            if (igr) then
+                                ! IGR stores N-1 volume fractions; the last alpha is the reduced 1 - sum
+                                if (num_fluids == 1) then
+                                    dynamic_viscosity = dynamic_viscosities(1)
+                                else
+                                    alpha_sum = 0._wp
+                                    do fluid_idx = 1, num_fluids - 1
+                                        alpha_local = q_prim_vf(eqn_idx%adv%beg - 1 + fluid_idx)%sf(i, j, k)
+                                        alpha_sum = alpha_sum + alpha_local
+                                        dynamic_viscosity = dynamic_viscosity + alpha_local*dynamic_viscosities(fluid_idx)
+                                    end do
+                                    dynamic_viscosity = dynamic_viscosity + (1._wp - alpha_sum)*dynamic_viscosities(num_fluids)
+                                end if
+                            else
+                                do fluid_idx = 1, num_fluids
+                                    ! local dynamic viscosity is the dynamic viscosity of the fluid times alpha of the fluid
+                                    dynamic_viscosity = dynamic_viscosity + (q_prim_vf(fluid_idx + eqn_idx%adv%beg - 1)%sf(i, j, &
+                                        & k)*dynamic_viscosities(fluid_idx))
+                                end do
+                            end if
+
+                            ! get the linear force components first
+                            call s_compute_viscous_stress_tensor(viscous_stress_div_1, q_prim_vf, dynamic_viscosity, i - 1, j, k)
+                            call s_compute_viscous_stress_tensor(viscous_stress_div_2, q_prim_vf, dynamic_viscosity, i + 1, j, k)
+                            ! get the x derivative of the viscous stress tensor
+                            viscous_stress_div = (viscous_stress_div_2 - viscous_stress_div_1)/(2._wp*dx)
+                            local_force_contribution_viscous(1:3) = local_force_contribution_viscous(1:3) + viscous_stress_div(1, &
+                                                             & 1:3)  ! add te x components of the derivative to the force
+                            do l = 1, 3
+                                ! take the cross products for the torque component
+                                ! call s_cross_product(radial_vector, viscous_stress_div_1(l, 1:3), viscous_cross_1(l, 1:3))
+                                ! call s_cross_product(radial_vector, viscous_stress_div_2(l, 1:3), viscous_cross_2(l, 1:3))
+                            end do
+
+                            ! viscous_stress_div = (viscous_cross_2 - viscous_cross_1)/(2._wp*dx) ! get the x derivative of the
+                            ! cross product
+                            ! local_torque_contribution(1:3) = local_torque_contribution(1:3) + viscous_stress_div(1, 1:3) ! apply
+                            ! the cross product derivative to the torque
+
+                            call s_compute_viscous_stress_tensor(viscous_stress_div_1, q_prim_vf, dynamic_viscosity, i, j - 1, k)
+                            call s_compute_viscous_stress_tensor(viscous_stress_div_2, q_prim_vf, dynamic_viscosity, i, j + 1, k)
+                            viscous_stress_div = (viscous_stress_div_2 - viscous_stress_div_1)/(2._wp*dy)
+                            local_force_contribution_viscous(1:3) = local_force_contribution_viscous(1:3) + viscous_stress_div(2, &
+                                                             & 1:3)
+                            do l = 1, 3
+                                !    call s_cross_product(radial_vector, viscous_stress_div_1(l, 1:3), viscous_cross_1(l, 1:3))
+                                !    call s_cross_product(radial_vector, viscous_stress_div_2(l, 1:3), viscous_cross_2(l, 1:3))
+                            end do
+
+                            ! viscous_stress_div = (viscous_cross_2 - viscous_cross_1)/(2._wp*dy)
+                            ! local_torque_contribution(1:3) = local_torque_contribution(1:3) + viscous_stress_div(2, 1:3)
+
+                            if (num_dims == 3) then
+                                call s_compute_viscous_stress_tensor(viscous_stress_div_1, q_prim_vf, dynamic_viscosity, i, j, &
+                                                                     & k - 1)
+                                call s_compute_viscous_stress_tensor(viscous_stress_div_2, q_prim_vf, dynamic_viscosity, i, j, &
+                                                                     & k + 1)
+                                viscous_stress_div = (viscous_stress_div_2 - viscous_stress_div_1)/(2._wp*dz)
+                                local_force_contribution_viscous(1:3) = local_force_contribution_viscous(1:3) &
+                                                                 & + viscous_stress_div(3,1:3)
+                                do l = 1, 3
+                                    ! call s_cross_product(radial_vector, viscous_stress_div_1(l, 1:3), viscous_cross_1(l, 1:3))
+                                    ! call s_cross_product(radial_vector, viscous_stress_div_2(l, 1:3), viscous_cross_2(l, 1:3))
+                                end do
+                                !    viscous_stress_div = (viscous_cross_2 - viscous_cross_1)/(2._wp*dz)
+                                !    local_torque_contribution(1:3) = local_torque_contribution(1:3) + viscous_stress_div(3, 1:3)
+
+                            end if
+
+                            call s_cross_product(radial_vector, local_force_contribution, local_torque_contribution)
+
+                        ! Update the force and torque values atomically to prevent race conditions
+                        do l = 1, 3
+                            $:GPU_ATOMIC(atomic='update')
+                            forces(ib_idx, l) = forces(ib_idx, l) + (local_force_contribution(l)*cell_volume)
+                            $:GPU_ATOMIC(atomic='update')
+                            forces_viscous(ib_idx, l) = forces_viscous(ib_idx, &
+                                           & l) + (local_force_contribution_viscous(l)*cell_volume)
+                            !$:GPU_ATOMIC(atomic='update')
+                            ! torques(ib_idx, l) = torques(ib_idx, l) + local_torque_contribution(l)*cell_volume
+                        end do
+                    end if
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+        call s_apply_collision_forces(ghost_points, num_gps, ib_markers, forces, torques)
+
+        forces_gbl = 0._wp
+        forces_viscous_gbl = 0._wp
+        do i = 1, num_ibs
+            forces_gbl(patch_ib(i)%gbl_patch_id,:) = forces(i,:)
+            forces_viscous_gbl(patch_ib(i)%gbl_patch_id,:) = forces_viscous(i,:)
+        end do
+
+        ! reduce the forces across all MPI ranks        call s_mpi_allreduce_vectors_sum(torques, torques, num_ibs, 3)
+        call s_mpi_allreduce_vectors_sum(forces_gbl, forces_gbl, num_gbl_ibs, 3)
+        call s_mpi_allreduce_vectors_sum(forces_viscous_gbl, forces_viscous_gbl, num_gbl_ibs, 3)
+
+        ! consider body forces after reducing to avoid double counting
+        do i = 1, num_ibs
+            if (bf_x) then
+                forces_gbl(patch_ib(i)%gbl_patch_id, 1) = forces_gbl(patch_ib(i)%gbl_patch_id, 1) + accel_bf(1)*patch_ib(i)%mass
+            end if
+            if (bf_y) then
+                forces_gbl(patch_ib(i)%gbl_patch_id, 2) = forces_gbl(patch_ib(i)%gbl_patch_id, 2) + accel_bf(2)*patch_ib(i)%mass
+            end if
+            if (bf_z) then
+                forces_gbl(patch_ib(i)%gbl_patch_id, 3) = forces_gbl(patch_ib(i)%gbl_patch_id, 3) + accel_bf(3)*patch_ib(i)%mass
+            end if
+        end do
+
+        ! apply the summed forces
+        $:GPU_PARALLEL_LOOP(private='[i]', copyin='[forces, torques]')
+        do i = 1, num_ibs
+            !            patch_ib(i)%force(:) = forces(i, :)
+            ! patch_ib(i)%torque(:) = matmul(patch_ib(i)%rotation_matrix_inverse, torques(i, :)) ! torques must be converted to the
+            ! local coordinates of the IB
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+        call nvtxEndRange
+        if (proc_rank == 0) then
+            file_loc = trim(case_dir) // '/forces.csv'
+            open (unit=92, file=trim(file_loc), status='UNKNOWN', position='APPEND', action='WRITE')
+            write (92, '(ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8, A1, ES16.8)') mytime, ",", forces_gbl(1, 1), ",", &
+                   & forces_viscous_gbl(1, 1), ",", forces_gbl(1, 2), ",", forces_viscous_gbl(1, 2), &
+                   ",", forces_gbl(1, 3), ",", forces_viscous_gbl(1, 3)
+            close (92)
+        end if
+
+    end subroutine s_compute_ib_forces
   !> Compute pressure and viscous forces and torques on immersed bodies via volume integration
     subroutine s_compute_ib_forces(q_prim_vf, fluid_pp)
 
