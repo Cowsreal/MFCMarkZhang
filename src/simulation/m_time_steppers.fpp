@@ -567,8 +567,10 @@ contains
                 end if
                 if (s == 3) then
                     if (igr) then
+                        call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf, q_T_sf)
                         call s_compute_ib_forces(q_cons_ts(1)%vf, fluid_pp)
                     else
+                        call s_populate_variables_buffers(bc_type, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf, q_T_sf)
                         call s_compute_ib_forces(q_prim_vf, fluid_pp)
                     end if
                 end if

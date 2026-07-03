@@ -605,6 +605,8 @@ class CaseValidator:
 
         ib_state_wrt = self.get("ib_state_wrt", "F") == "T"
 
+        fd_order = self.get("fd_order")
+        self.prohibit(ib and fd_order is None, "fd_order must be specified for ib")
         self.prohibit(ib and n <= 0, "Immersed Boundaries do not work in 1D (requires n > 0)")
         has_particle_clouds = num_particle_clouds > 0 and any((self.get(f"particle_cloud({i})%num_particles", 0) or 0) > 0 for i in range(1, num_particle_clouds + 1))
         self.prohibit(
@@ -623,11 +625,11 @@ class CaseValidator:
             packing_method = self.get(f"particle_cloud({i})%packing_method", None)
             self.prohibit(
                 packing_method is None,
-                f"particle_cloud({i})%packing_method must be specified (1 = rejection sampling)",
+                f"particle_cloud({i})%packing_method must be specified (1 = rejection sampling, 2 = lattice)",
             )
             self.prohibit(
-                packing_method is not None and packing_method not in [1],
-                f"particle_cloud({i})%packing_method must be 1 (rejection sampling is the only supported method)",
+                packing_method is not None and packing_method not in [1, 2],
+                f"particle_cloud({i})%packing_method must be 1 (rejection sampling) or 2 (lattice)",
             )
 
         num_ib_airfoils_max = get_fortran_constants().get("num_ib_airfoils_max", 5)
@@ -1060,7 +1062,7 @@ class CaseValidator:
         bubbles_euler = self.get("bubbles_euler", "F") == "T"
         bubbles_lagrange = self.get("bubbles_lagrange", "F") == "T"
         alt_soundspeed = self.get("alt_soundspeed", "F") == "T"
-        #surface_tension = self.get("surface_tension", "F") == "T"
+        surface_tension = self.get("surface_tension", "F") == "T"
         hypoelasticity = self.get("hypoelasticity", "F") == "T"
         acoustic_source = self.get("acoustic_source", "F") == "T"
         relax = self.get("relax", "F") == "T"
@@ -1075,10 +1077,11 @@ class CaseValidator:
         self.prohibit(igr_iter_solver is not None and igr_iter_solver not in [1, 2], "igr_iter_solver must be 1 or 2")
         self.prohibit(alf_factor is not None and alf_factor < 0, "alf_factor must be non-negative")
         self.prohibit(model_eqns is not None and model_eqns != 2, "IGR only supports model_eqns = 2")
+        self.prohibit(ib, "IGR does not support the immersed boundary method")
         self.prohibit(bubbles_euler, "IGR does not support Euler-Euler bubble models")
         self.prohibit(bubbles_lagrange, "IGR does not support Euler-Lagrange bubble models")
         self.prohibit(alt_soundspeed, "IGR does not support alt_soundspeed = T")
-        #self.prohibit(surface_tension, "IGR does not support surface tension")
+        self.prohibit(surface_tension, "IGR does not support surface tension")
         self.prohibit(hypoelasticity, "IGR does not support hypoelasticity")
         self.prohibit(acoustic_source, "IGR does not support acoustic sources")
         self.prohibit(relax, "IGR does not support phase change")
@@ -1087,15 +1090,6 @@ class CaseValidator:
         self.prohibit(cyl_coord, "IGR does not support cylindrical or axisymmetric coordinates")
         self.prohibit(probe_wrt, "IGR does not support probe writes")
         self.prohibit(int_comp > 0, "IGR does not support int_comp > 0")
-
-        if ib:
-            num_ibs = self.get("num_ibs", 0) or 0
-            for i in range(1, num_ibs + 1):
-                moving_ibm = self.get(f"patch_ib({i})%moving_ibm")
-                self.prohibit(
-                    moving_ibm is not None and moving_ibm > 0,
-                    f"IGR does not support moving immersed boundaries (patch_ib({i})%moving_ibm = {moving_ibm})",
-                )
 
         # Check BCs - IGR does not support characteristic BCs
         # Characteristic BCs are BC_CHAR_SLIP_WALL (-5) through BC_CHAR_SUP_OUTFLOW (-12)
